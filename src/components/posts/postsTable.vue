@@ -11,6 +11,8 @@ export default {
   data() {
     return {
       postsStore: usePostsStore(),
+      searchInput: '',
+      searchTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
   computed: {
@@ -22,7 +24,17 @@ export default {
     this.postsStore.ensurePostsLoaded()
   },
   methods: {
-    onNextPage() {},
+    async onPageChange(page: number) {
+      await this.postsStore.loadPage(page)
+    },
+    onInput(value: string) {
+      this.searchInput = value
+
+      if (this.searchTimer) clearTimeout(this.searchTimer)
+      this.searchTimer = setTimeout(() => {
+        this.postsStore.searchPosts(this.searchInput)
+      }, 400)
+    },
   },
 }
 </script>
@@ -31,6 +43,14 @@ export default {
   <div>
     <h1>Posts Table</h1>
     <v-container>
+      <v-text-field
+        class="searchbar"
+        append-inner-icon="mdi-magnify"
+        label="Поиск по заголовку, тексту или ID пользователя"
+        density="compact"
+        @update:model-value="onInput($event)"
+      ></v-text-field>
+      <v-label>Найдено {{ postsStore.total }} постов</v-label>
       <v-row>
         <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
           <PostCard :post="post" />
@@ -39,11 +59,13 @@ export default {
       <v-pagination
         :length="postsStore.pagesAmount"
         :total-visible="5"
-        @next="postsStore.loadPage()"
-        @prev="postsStore.loadPage()"
-        @update:model-value="(postsStore.$patch({ page: $event }), postsStore.loadPage())"
+        @update:model-value="onPageChange($event)"
       ></v-pagination>
     </v-container>
   </div>
 </template>
-<style scoped></style>
+<style scoped>
+.searchbar {
+  max-width: 500px;
+}
+</style>
