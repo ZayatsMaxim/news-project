@@ -1,11 +1,24 @@
-<script setup lang="ts"></script>
+<script lang="ts">
+import PostsTable from '@/components/posts/postsTable.vue'
+
+export default {
+  components: {
+    PostsTable,
+  },
+}
+</script>
 
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Посты</h1>
+      <h2>Список постов от пользователей</h2>
+    </header>
+
+    <main class="app-main">
+      <PostsTable />
+    </main>
+  </div>
 </template>
 
 <style scoped></style>
