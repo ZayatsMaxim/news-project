@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia'
-import { getPosts, type PostSearchField } from '@/api/postApi'
+import {
+  getPostById,
+  getPostComments,
+  getPosts,
+  type PostCommentsResponseDto,
+  type PostSearchField,
+} from '@/api/postApi'
+import { getUser } from '@/api/userApi'
 import type { PostDto, PostReactionsDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
+import type { UserDto } from '@/dto/user/userDto'
 
 const STORAGE_KEY = 'posts_store_state'
 const SEARCH_FIELDS: PostSearchField[] = ['title', 'body', 'userId']
@@ -63,6 +71,16 @@ export const usePostsStore = defineStore('posts', {
     searchField: 'title' as PostSearchField,
     isLoading: false,
     requestController: null as AbortController | null,
+    /** Пост, загруженный для отображения в модалке (по id) */
+    modalPost: null as PostDto | null,
+    /** Автор поста (из GET /users/:userId) */
+    modalUser: null as UserDto | null,
+    /** Комментарии к посту (из GET /posts/:postId/comments) */
+    modalComments: [] as PostCommentsResponseDto['comments'],
+    modalPostLoading: false,
+    modalRequestController: null as AbortController | null,
+    /** id поста, для которого идёт или последний раз шла загрузка (для защиты от race) */
+    modalRequestedPostId: null as number | null,
   }),
 
   getters: {
@@ -166,6 +184,62 @@ export const usePostsStore = defineStore('posts', {
     async ensurePostsLoaded() {
       if (this.hydrateFromStorage()) return
       await this.fetchPosts()
+    },
+
+    async fetchPostById(postId: number) {
+      if (this.modalRequestController) {
+        this.modalRequestController.abort()
+      }
+      this.modalRequestController = new AbortController()
+      const signal = this.modalRequestController.signal
+      this.modalRequestedPostId = postId
+
+      this.modalPostLoading = true
+      this.modalPost = null
+      this.modalUser = null
+      this.modalComments = []
+      try {
+        const post = await getPostById(postId, signal)
+
+        const [userResult, commentsResult] = await Promise.allSettled([
+          post.userId ? getUser(post.userId, signal) : Promise.resolve(null),
+          getPostComments(postId, signal),
+        ])
+
+        if (signal.aborted || this.modalRequestedPostId !== postId) return
+
+        this.modalPost = post
+        if (userResult.status === 'fulfilled' && userResult.value != null) {
+          this.modalUser = userResult.value
+        } else if (userResult.status === 'rejected' && !(userResult.reason instanceof DOMException && userResult.reason.name === 'AbortError')) {
+          console.error('Error fetching user:', userResult.reason)
+        }
+        if (commentsResult.status === 'fulfilled') {
+          this.modalComments = commentsResult.value.comments ?? []
+        } else if (commentsResult.status === 'rejected' && !(commentsResult.reason instanceof DOMException && commentsResult.reason.name === 'AbortError')) {
+          console.error('Error fetching comments:', commentsResult.reason)
+        }
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError')) {
+          console.error('Error fetching post by id:', e)
+        }
+      } finally {
+        if (this.modalRequestedPostId === postId) {
+          this.modalPostLoading = false
+        }
+        this.modalRequestController = null
+      }
+    },
+
+    clearModalPost() {
+      if (this.modalRequestController) {
+        this.modalRequestController.abort()
+        this.modalRequestController = null
+      }
+      this.modalRequestedPostId = null
+      this.modalPost = null
+      this.modalUser = null
+      this.modalComments = []
     },
   },
 })

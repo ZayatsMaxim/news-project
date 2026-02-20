@@ -1,12 +1,13 @@
 <script lang="ts">
 import PostCard from './postCard.vue'
+import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsStore } from '@/stores/postsStore'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostSearchField } from '@/api/postApi'
 
 export default {
   name: 'PostsTable',
-  components: { PostCard },
+  components: { PostCard, PostDetailsModal },
 
   data() {
     return {
@@ -14,6 +15,8 @@ export default {
       searchInput: '',
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
+      isPostModalOpen: false,
+      selectedPostId: null as number | null,
       searchField: 'title' as PostSearchField,
       searchFieldOptions: [
         { title: 'Заголовок', value: 'title' },
@@ -64,6 +67,11 @@ export default {
   },
 
   methods: {
+    openPostModal(postId: number) {
+      this.selectedPostId = postId
+      this.isPostModalOpen = true
+    },
+
     async onPageChange(page: number) {
       if (this.searchTimer) {
         clearTimeout(this.searchTimer)
@@ -121,15 +129,17 @@ export default {
 
       <v-row>
         <v-col
-          v-for="(post, index) in posts"
-          :key="`${post.userId}-${post.title}-${index}`"
+          v-for="post in posts"
+          :key="post.id"
           cols="12"
           sm="6"
           md="4"
         >
-          <PostCard :post="post" />
+          <PostCard :post="post" @open="openPostModal(post.id)" />
         </v-col>
       </v-row>
+
+      <PostDetailsModal v-model="isPostModalOpen" :post-id="selectedPostId" />
 
       <v-pagination
         :length="postsStore.pagesAmount"

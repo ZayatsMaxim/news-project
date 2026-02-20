@@ -10,4 +10,6 @@ export interface PostDto {
   userId: number
   views: number
   reactions: PostReactionsDto
+  /** Присутствует при запросе одного поста (GET /posts/:id) */
+  tags?: string[]
 }

@@ -4,6 +4,7 @@ import type { PropType } from 'vue'
 
 export default {
   name: 'PostCard',
+  emits: ['open'],
   props: {
     post: {
       type: Object as PropType<PostDto>,
@@ -20,7 +21,7 @@ export default {
 </script>
 
 <template>
-  <v-card :title="post.title" :subtitle="`ID автора: ${post.userId}`">
+  <v-card class="post-card" :title="post.title" :subtitle="`ID автора: ${post.userId}`" @click="$emit('open')">
     <v-card-text>
       {{ truncatedPostBody }}
     </v-card-text>
@@ -54,5 +55,9 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.post-card {
+  cursor: pointer;
 }
 </style>
