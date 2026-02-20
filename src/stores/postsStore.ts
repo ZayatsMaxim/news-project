@@ -190,8 +190,9 @@ export const usePostsStore = defineStore('posts', {
       if (this.modalRequestController) {
         this.modalRequestController.abort()
       }
-      this.modalRequestController = new AbortController()
-      const signal = this.modalRequestController.signal
+      const requestController = new AbortController()
+      this.modalRequestController = requestController
+      const signal = requestController.signal
       this.modalRequestedPostId = postId
 
       this.modalPostLoading = true
@@ -227,7 +228,9 @@ export const usePostsStore = defineStore('posts', {
         if (this.modalRequestedPostId === postId) {
           this.modalPostLoading = false
         }
-        this.modalRequestController = null
+        if (this.modalRequestController === requestController) {
+          this.modalRequestController = null
+        }
       }
     },
 

@@ -71,6 +71,9 @@ export default {
       this.selectedPostId = postId
       this.isPostModalOpen = true
     },
+    navigateModalPost(postId: number) {
+      this.selectedPostId = postId
+    },
 
     async onPageChange(page: number) {
       if (this.searchTimer) {
@@ -139,7 +142,11 @@ export default {
         </v-col>
       </v-row>
 
-      <PostDetailsModal v-model="isPostModalOpen" :post-id="selectedPostId" />
+      <PostDetailsModal
+        v-model="isPostModalOpen"
+        :post-id="selectedPostId"
+        @navigate="navigateModalPost"
+      />
 
       <v-pagination
         :length="postsStore.pagesAmount"
