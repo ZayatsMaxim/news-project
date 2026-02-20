@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { getPosts, type PostSearchField } from '@/api/postApi'
-import type { PostDto } from '@/dto/post/postDto'
+import type { PostDto, PostReactionsDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
 
 const STORAGE_KEY = 'posts_store_state'
+const SEARCH_FIELDS: PostSearchField[] = ['title', 'body', 'userId']
 
 interface StoredPostsState {
   posts: PostDto[]
@@ -14,8 +15,41 @@ interface StoredPostsState {
   searchField: PostSearchField
 }
 
+interface RawPost {
+  id?: unknown
+  title?: unknown
+  body?: unknown
+  userId?: unknown
+  views?: unknown
+  reactions?: {
+    likes?: unknown
+    dislikes?: unknown
+  }
+}
+
 function toFiniteNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function normalizeReactions(raw: RawPost['reactions']): PostReactionsDto {
+  return {
+    likes: toFiniteNumber(raw?.likes, 0),
+    dislikes: toFiniteNumber(raw?.dislikes, 0),
+  }
+}
+
+function normalizePosts(rawPosts: unknown[]): PostDto[] {
+  return rawPosts.map((raw) => {
+    const post = (typeof raw === 'object' && raw !== null ? raw : {}) as RawPost
+    return {
+      id: toFiniteNumber(post.id, 0),
+      title: typeof post.title === 'string' ? post.title : '',
+      body: typeof post.body === 'string' ? post.body : '',
+      userId: toFiniteNumber(post.userId, 0),
+      views: toFiniteNumber(post.views, 0),
+      reactions: normalizeReactions(post.reactions),
+    }
+  })
 }
 
 export const usePostsStore = defineStore('posts', {
@@ -26,9 +60,9 @@ export const usePostsStore = defineStore('posts', {
     limit: 9,
     page: 1,
     query: '',
+    searchField: 'title' as PostSearchField,
     isLoading: false,
     requestController: null as AbortController | null,
-    searchField: 'title' as PostSearchField,
   }),
 
   getters: {
@@ -58,13 +92,18 @@ export const usePostsStore = defineStore('posts', {
         const raw = sessionStorage.getItem(STORAGE_KEY)
         if (!raw) return false
 
-        const data = JSON.parse(raw) as Partial<StoredPostsState>
+        const data = JSON.parse(raw) as Partial<StoredPostsState> & { posts?: unknown[] }
 
-        this.posts = Array.isArray(data.posts) ? data.posts : []
+        this.posts = normalizePosts(Array.isArray(data.posts) ? data.posts : [])
         this.total = toFiniteNumber(data.total, 0)
         this.skip = toFiniteNumber(data.skip, 0)
         this.page = toFiniteNumber(data.page, 1)
         this.query = typeof data.query === 'string' ? data.query : ''
+
+        const restoredField = data.searchField
+        this.searchField = SEARCH_FIELDS.includes(restoredField as PostSearchField)
+          ? (restoredField as PostSearchField)
+          : 'title'
 
         return this.posts.length > 0
       } catch (error) {
@@ -77,12 +116,9 @@ export const usePostsStore = defineStore('posts', {
       const resetPage = options.resetPage ?? false
       const requestSkip = resetPage ? 0 : this.skip
 
-      // 1) отменяем предыдущий запрос
       if (this.requestController) {
         this.requestController.abort()
       }
-
-      // 2) создаем новый контроллер
       this.requestController = new AbortController()
 
       this.isLoading = true
@@ -91,11 +127,11 @@ export const usePostsStore = defineStore('posts', {
           limit: this.limit,
           skip: requestSkip,
           query: this.query,
-          signal: this.requestController.signal,
           field: this.searchField,
+          signal: this.requestController.signal,
         })
 
-        this.posts = Array.isArray(data.posts) ? data.posts : []
+        this.posts = normalizePosts(Array.isArray(data.posts) ? (data.posts as unknown[]) : [])
         this.total = toFiniteNumber(data.total, 0)
 
         if (resetPage) {
@@ -107,7 +143,6 @@ export const usePostsStore = defineStore('posts', {
 
         this.saveToStorage()
       } catch (error) {
-        // AbortError — штатная ситуация, не логируем как ошибку
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           console.error('Error fetching posts:', error)
         }

@@ -24,12 +24,35 @@ export default {
     <v-card-text>
       {{ truncatedPostBody }}
     </v-card-text>
-    <div>
-      <span>Понравилось: {{ post.reactions.likes }}</span>
-      <span>Не понравилось: {{ post.reactions.dislikes }}</span>
-      <span>Просмотров: {{ post.views }}</span>
+
+    <div class="meta">
+      <span class="meta-item">
+        <v-icon icon="mdi-thumb-up-outline" size="18" />
+        {{ post.reactions.likes }}
+      </span>
+      <span class="meta-item">
+        <v-icon icon="mdi-thumb-down-outline" size="18" />
+        {{ post.reactions.dislikes }}
+      </span>
+      <span class="meta-item">
+        <v-icon icon="mdi-eye-outline" size="18" />
+        {{ post.views }}
+      </span>
     </div>
   </v-card>
 </template>
 
-<style scoped></style>
+<style scoped>
+.meta {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 16px;
+  font-size: 0.875rem;
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>

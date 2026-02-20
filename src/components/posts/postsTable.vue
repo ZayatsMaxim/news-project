@@ -2,6 +2,7 @@
 import PostCard from './postCard.vue'
 import { usePostsStore } from '@/stores/postsStore'
 import type { PostDto } from '@/dto/post/postDto'
+import type { PostSearchField } from '@/api/postApi'
 
 export default {
   name: 'PostsTable',
@@ -13,7 +14,7 @@ export default {
       searchInput: '',
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
-      searchField: 'title' as import('@/api/postApi').PostSearchField,
+      searchField: 'title' as PostSearchField,
       searchFieldOptions: [
         { title: 'Заголовок', value: 'title' },
         { title: 'Текст', value: 'body' },
@@ -30,24 +31,34 @@ export default {
 
   async mounted() {
     await this.postsStore.ensurePostsLoaded()
-    this.searchInput = this.postsStore.query ?? ''
+    this.searchInput = this.postsStore.query
     this.searchField = this.postsStore.searchField
 
-    // Важно: дать watcher-очереди отработать до снятия флага
     await this.$nextTick()
     this.isHydrating = false
+  },
+
+  beforeUnmount() {
+    if (this.searchTimer) clearTimeout(this.searchTimer)
   },
 
   watch: {
     searchInput(newValue: string) {
       if (this.isHydrating) return
 
-      // ключевой guard: если это просто синхронизация из store, ничего не ищем
-      if (newValue.trim() === this.postsStore.query.trim()) return
+      if (
+        newValue.trim() === this.postsStore.query.trim() &&
+        this.searchField === this.postsStore.searchField
+      ) {
+        return
+      }
 
       if (this.searchTimer) clearTimeout(this.searchTimer)
+
+      const value = newValue
+      const field = this.searchField
       this.searchTimer = setTimeout(() => {
-        this.postsStore.searchPosts(newValue, this.searchField)
+        this.postsStore.searchPosts(value, field)
       }, 400)
     },
   },
@@ -61,13 +72,16 @@ export default {
       await this.postsStore.loadPage(page)
     },
 
-    async onSearchFieldChange(value: 'title' | 'body' | 'userId') {
+    async onSearchFieldChange(value: PostSearchField) {
       this.searchField = value
+      if (this.isHydrating) return
+
       if (this.searchTimer) {
         clearTimeout(this.searchTimer)
         this.searchTimer = null
       }
-      await this.postsStore.searchPosts(this.searchInput, this.searchField)
+
+      await this.postsStore.searchPosts(this.searchInput, value)
     },
   },
 }
@@ -75,7 +89,6 @@ export default {
 
 <template>
   <div>
-    <h1>Posts Table</h1>
     <v-container>
       <v-row class="filters-row" align="center">
         <v-col cols="12" sm="4" md="3" lg="2">
@@ -107,7 +120,13 @@ export default {
       <v-label>Найдено {{ postsStore.total }} постов</v-label>
 
       <v-row>
-        <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
+        <v-col
+          v-for="(post, index) in posts"
+          :key="`${post.userId}-${post.title}-${index}`"
+          cols="12"
+          sm="6"
+          md="4"
+        >
           <PostCard :post="post" />
         </v-col>
       </v-row>
@@ -125,13 +144,5 @@ export default {
 <style scoped>
 .filters-row {
   row-gap: 8px;
-}
-
-.search-select {
-  max-width: 200px;
-}
-
-.searchbar {
-  max-width: 500px;
 }
 </style>
