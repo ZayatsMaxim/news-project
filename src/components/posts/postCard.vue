@@ -1,11 +1,12 @@
 <script lang="ts">
-import { PostDto } from '@/dto/post/postDto'
+import type { PostDto } from '@/dto/post/postDto'
+import type { PropType } from 'vue'
 
 export default {
   name: 'PostCard',
   props: {
     post: {
-      type: PostDto,
+      type: Object as PropType<PostDto>,
       required: true,
     },
   },

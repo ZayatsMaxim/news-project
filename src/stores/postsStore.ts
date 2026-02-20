@@ -1,7 +1,22 @@
 import { defineStore } from 'pinia'
-import { PostDto } from '@/dto/post/postDto'
-import { PostReactionsDto } from '@/dto/post/postDto'
-import { PostResponseDto } from '@/dto/post/postResponseDto'
+import { getPosts, type PostSearchField } from '@/api/postApi'
+import type { PostDto } from '@/dto/post/postDto'
+import type { PostResponseDto } from '@/dto/post/postResponseDto'
+
+const STORAGE_KEY = 'posts_store_state'
+
+interface StoredPostsState {
+  posts: PostDto[]
+  total: number
+  skip: number
+  page: number
+  query: string
+  searchField: PostSearchField
+}
+
+function toFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
 
 export const usePostsStore = defineStore('posts', {
   state: () => ({
@@ -11,71 +26,111 @@ export const usePostsStore = defineStore('posts', {
     limit: 9,
     page: 1,
     query: '',
+    isLoading: false,
+    requestController: null as AbortController | null,
+    searchField: 'title' as PostSearchField,
   }),
+
+  getters: {
+    pagesAmount: (state) => Math.max(1, Math.ceil(state.total / state.limit)),
+    requiredSkipAmount: (state) => (state.page - 1) * state.limit,
+  },
+
   actions: {
-    mapPosts(data: PostResponseDto) {
-      this.posts = (data.posts || []).map(
-        (post: PostDto) =>
-          new PostDto({
-            id: post.id,
-            title: post.title,
-            body: post.body,
-            tags: post.tags || [],
-            reactions: new PostReactionsDto({
-              likes: post.reactions?.likes || 0,
-              dislikes: post.reactions?.dislikes || 0,
-            }),
-            views: post.views || 0,
-            userId: post.userId,
-          }),
-      )
-      this.total = data.total || 0
-      this.skip = data.skip || 0
-      console.log(this.posts)
-      console.log(this.total)
-    },
-    async fetchPosts() {
+    saveToStorage() {
       try {
-        const normalizedQuery = this.query.trim()
-        const isNumericQuery = /^\d+$/.test(normalizedQuery)
-
-        let url = ''
-
-        if (!normalizedQuery) {
-          url = `https://dummyjson.com/posts?limit=${this.limit}&skip=${this.skip}`
-        } else if (isNumericQuery) {
-          url = `https://dummyjson.com/posts/user/${normalizedQuery}?limit=${this.limit}&skip=${this.skip}`
-        } else {
-          url = `https://dummyjson.com/posts/search?q=${encodeURIComponent(normalizedQuery)}&limit=${this.limit}&skip=${this.skip}`
+        const stateToSave: StoredPostsState = {
+          posts: this.posts,
+          total: this.total,
+          skip: this.skip,
+          page: this.page,
+          query: this.query,
+          searchField: this.searchField,
         }
-
-        const response = await fetch(url)
-        if (!response.ok) throw new Error('Failed to fetch posts')
-
-        const data = (await response.json()) as PostResponseDto
-        this.mapPosts(data)
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
       } catch (error) {
-        console.error('Error fetching posts:', error)
+        console.warn('Failed to save to sessionStorage', error)
       }
     },
-    async searchPosts(query: string) {
-      this.query = query
-      this.page = 1
-      this.skip = 0
-      await this.fetchPosts()
+
+    hydrateFromStorage(): boolean {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY)
+        if (!raw) return false
+
+        const data = JSON.parse(raw) as Partial<StoredPostsState>
+
+        this.posts = Array.isArray(data.posts) ? data.posts : []
+        this.total = toFiniteNumber(data.total, 0)
+        this.skip = toFiniteNumber(data.skip, 0)
+        this.page = toFiniteNumber(data.page, 1)
+        this.query = typeof data.query === 'string' ? data.query : ''
+
+        return this.posts.length > 0
+      } catch (error) {
+        console.warn('Failed to hydrate from sessionStorage', error)
+        return false
+      }
     },
-    async ensurePostsLoaded() {
-      if (this.posts?.length) return
-      await this.fetchPosts()
+
+    async fetchPosts(options: { resetPage?: boolean } = {}) {
+      const resetPage = options.resetPage ?? false
+      const requestSkip = resetPage ? 0 : this.skip
+
+      // 1) отменяем предыдущий запрос
+      if (this.requestController) {
+        this.requestController.abort()
+      }
+
+      // 2) создаем новый контроллер
+      this.requestController = new AbortController()
+
+      this.isLoading = true
+      try {
+        const data: PostResponseDto = await getPosts({
+          limit: this.limit,
+          skip: requestSkip,
+          query: this.query,
+          signal: this.requestController.signal,
+          field: this.searchField,
+        })
+
+        this.posts = Array.isArray(data.posts) ? data.posts : []
+        this.total = toFiniteNumber(data.total, 0)
+
+        if (resetPage) {
+          this.page = 1
+          this.skip = 0
+        } else {
+          this.skip = toFiniteNumber(data.skip, requestSkip)
+        }
+
+        this.saveToStorage()
+      } catch (error) {
+        // AbortError — штатная ситуация, не логируем как ошибку
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          console.error('Error fetching posts:', error)
+        }
+      } finally {
+        this.isLoading = false
+      }
     },
+
+    async searchPosts(query: string, field?: PostSearchField) {
+      this.query = query.trim()
+      this.searchField = field ?? this.searchField
+      await this.fetchPosts({ resetPage: true })
+    },
+
     async loadPage(page: number) {
       this.page = page
       this.skip = this.requiredSkipAmount
       await this.fetchPosts()
     },
-  },
-  getters: {
-    pagesAmount: (state) => Math.ceil(state.total / state.limit),
-    requiredSkipAmount: (state) => (state.page - 1) * state.limit,
+
+    async ensurePostsLoaded() {
+      if (this.hydrateFromStorage()) return
+      await this.fetchPosts()
+    },
   },
 })
