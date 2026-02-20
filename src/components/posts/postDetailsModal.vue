@@ -1,5 +1,6 @@
 <script lang="ts">
-import { usePostsStore } from '@/stores/postsStore'
+import { usePostDetailsStore } from '@/stores/postDetailsStore'
+import { usePostsListStore } from '@/stores/postsListStore'
 
 export default {
   name: 'PostDetailsModal',
@@ -15,7 +16,10 @@ export default {
   },
   emits: ['update:modelValue', 'navigate'],
   setup() {
-    return { postsStore: usePostsStore() }
+    return {
+      postDetailsStore: usePostDetailsStore(),
+      postsListStore: usePostsListStore(),
+    }
   },
   computed: {
     isOpen: {
@@ -27,10 +31,10 @@ export default {
       },
     },
     post() {
-      return this.postsStore.modalPost
+      return this.postDetailsStore.modalPost
     },
     user() {
-      return this.postsStore.modalUser
+      return this.postDetailsStore.modalUser
     },
     authorLine(): string {
       const u = this.user
@@ -40,26 +44,26 @@ export default {
     },
     currentPostIndex(): number {
       if (this.postId == null) return -1
-      return this.postsStore.posts.findIndex((item) => item.id === this.postId)
+      return this.postsListStore.posts.findIndex((item) => item.id === this.postId)
     },
     prevPostId(): number | null {
       if (this.currentPostIndex <= 0) return null
-      return this.postsStore.posts[this.currentPostIndex - 1]?.id ?? null
+      return this.postsListStore.posts[this.currentPostIndex - 1]?.id ?? null
     },
     nextPostId(): number | null {
       if (this.currentPostIndex < 0) return null
-      return this.postsStore.posts[this.currentPostIndex + 1]?.id ?? null
+      return this.postsListStore.posts[this.currentPostIndex + 1]?.id ?? null
     },
   },
   watch: {
     isOpen(open: boolean) {
       if (open && this.postId != null) {
-        this.postsStore.fetchPostById(this.postId)
+        this.postDetailsStore.fetchPostById(this.postId)
       }
     },
     postId(newPostId: number | null) {
       if (this.isOpen && newPostId != null) {
-        this.postsStore.fetchPostById(newPostId)
+        this.postDetailsStore.fetchPostById(newPostId)
       }
     },
   },
@@ -81,7 +85,7 @@ export default {
     v-model="isOpen"
     persistent
     max-width="1200"
-    @after-leave="postsStore.clearModalPost()"
+    @after-leave="postDetailsStore.clearModalPost()"
   >
     <div class="modal-layout">
       <button
@@ -96,7 +100,7 @@ export default {
       <v-card class="modal-card">
         <v-card-title>{{ post?.title ?? (postId != null ? `Пост #${postId}` : 'Пост') }}</v-card-title>
 
-        <template v-if="postsStore.modalPostLoading">
+        <template v-if="postDetailsStore.modalPostLoading">
           <v-card-text class="loading-placeholder">Загрузка</v-card-text>
         </template>
 
@@ -131,10 +135,10 @@ export default {
               {{ post.views }}
             </span>
           </div>
-          <v-card-text v-if="postsStore.modalComments.length" class="comments-block">
+          <v-card-text v-if="postDetailsStore.modalComments.length" class="comments-block">
             <div class="comments-title">Комментарии</div>
             <div
-              v-for="comment in postsStore.modalComments"
+              v-for="comment in postDetailsStore.modalComments"
               :key="comment.id"
               class="comment-item"
             >

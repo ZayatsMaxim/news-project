@@ -1,6 +1,9 @@
+import { fetchJson } from '@/api/httpClient'
+import { apiConfig } from '@/config/api'
 import type { UserDto } from '@/dto/user/userDto'
+import { toFiniteNumber } from '@/utils/number'
 
-const USERS_BASE_URL = 'https://dummyjson.com/users'
+const USERS_BASE_URL = apiConfig.usersBaseUrl
 
 /** Ответ GET /users/:id (используем только часть полей) */
 interface RawUser {
@@ -11,16 +14,12 @@ interface RawUser {
   company?: { title?: unknown; department?: unknown }
 }
 
-function toNum(v: unknown, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-}
-
 function normalizeUser(raw: RawUser): UserDto {
   const company = raw.company && typeof raw.company === 'object' ? raw.company : undefined
   const jobTitle = typeof company?.title === 'string' ? company.title : undefined
   const department = typeof company?.department === 'string' ? company.department : undefined
   return {
-    id: toNum(raw.id, 0),
+    id: toFiniteNumber(raw.id, 0),
     username: typeof raw.username === 'string' ? raw.username : '',
     firstName: typeof raw.firstName === 'string' ? raw.firstName : '',
     lastName: typeof raw.lastName === 'string' ? raw.lastName : '',
@@ -31,10 +30,6 @@ function normalizeUser(raw: RawUser): UserDto {
 
 /** Получить пользователя по id (GET /users/:userId) */
 export async function getUser(userId: number, signal?: AbortSignal): Promise<UserDto> {
-  const response = await fetch(`${USERS_BASE_URL}/${userId}`, { signal })
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user: ${response.status}`)
-  }
-  const raw = (await response.json()) as RawUser
+  const raw = await fetchJson<RawUser>(`${USERS_BASE_URL}/${userId}`, { signal })
   return normalizeUser(raw)
 }

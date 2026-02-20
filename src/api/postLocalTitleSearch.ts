@@ -1,40 +1,23 @@
+import { fetchJson } from '@/api/httpClient'
+import { normalizePostList } from '@/api/mappers/postMapper'
+import { apiConfig } from '@/config/api'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
 
-const POSTS_BASE_URL = 'https://dummyjson.com/posts'
+/**
+ * Локальный поиск по title: загружается полный список постов и фильтрация идёт на клиенте.
+ *
+ * Стратегия обновления кэша:
+ * - TTL: кэш считается валидным в течение CACHE_TTL_MS; по истечении при следующем запросе данные запрашиваются заново.
+ * - Инвалидация: вызов invalidateLocalPostsCache() сбрасывает кэш (например, по кнопке «Обновить» в UI).
+ * - Явное обновление: store предоставляет действие refreshPosts(), которое инвалидирует кэш и перезапрашивает текущий вид.
+ */
+
+const POSTS_BASE_URL = apiConfig.postsBaseUrl
 const POSTS_SELECT = 'id,title,body,userId,reactions,views'
 
-interface RawPost {
-  id?: unknown
-  title?: unknown
-  body?: unknown
-  userId?: unknown
-  views?: unknown
-  reactions?: {
-    likes?: unknown
-    dislikes?: unknown
-  }
-}
-
-function toFiniteNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function toPostDto(raw: unknown): PostDto {
-  const post = (typeof raw === 'object' && raw !== null ? raw : {}) as RawPost
-
-  return {
-    id: toFiniteNumber(post.id, 0),
-    title: typeof post.title === 'string' ? post.title : '',
-    body: typeof post.body === 'string' ? post.body : '',
-    userId: toFiniteNumber(post.userId, 0),
-    views: toFiniteNumber(post.views, 0),
-    reactions: {
-      likes: toFiniteNumber(post.reactions?.likes, 0),
-      dislikes: toFiniteNumber(post.reactions?.dislikes, 0),
-    },
-  }
-}
+/** Время жизни кэша полного списка постов (мс). По истечении следующий поиск выполнит новый запрос к API. */
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 минут
 
 function toPaginated(posts: PostDto[], skip: number, limit: number): PostResponseDto {
   const safeSkip = Math.max(0, skip)
@@ -48,22 +31,38 @@ function toPaginated(posts: PostDto[], skip: number, limit: number): PostRespons
   }
 }
 
-let allPostsCache: PostDto[] | null = null
+interface AllPostsCacheEntry {
+  data: PostDto[]
+  fetchedAt: number
+}
+
+let allPostsCache: AllPostsCacheEntry | null = null
+
+function isCacheValid(entry: AllPostsCacheEntry, ttlMs: number): boolean {
+  return Date.now() - entry.fetchedAt < ttlMs
+}
+
+/**
+ * Сбрасывает кэш полного списка постов для локального поиска по title.
+ * Следующий поиск по title выполнит новый запрос к API.
+ * Вызывать при явном действии пользователя (кнопка «Обновить») или при событиях, требующих актуальных данных.
+ */
+export function invalidateLocalPostsCache(): void {
+  allPostsCache = null
+}
 
 async function getAllPosts(signal?: AbortSignal): Promise<PostDto[]> {
-  if (allPostsCache) return allPostsCache
-
-  const url = `${POSTS_BASE_URL}?limit=0&select=${encodeURIComponent(POSTS_SELECT)}`
-  const response = await fetch(url, { signal })
-  if (!response.ok) {
-    throw new Error(`Failed to fetch all posts: ${response.status}`)
+  if (allPostsCache && isCacheValid(allPostsCache, CACHE_TTL_MS)) {
+    return allPostsCache.data
   }
 
-  const data = (await response.json()) as PostResponseDto
-  const rawPosts = Array.isArray(data.posts) ? (data.posts as unknown[]) : []
-  allPostsCache = rawPosts.map(toPostDto)
+  const url = `${POSTS_BASE_URL}?limit=0&select=${encodeURIComponent(POSTS_SELECT)}`
+  const data = await fetchJson<{ posts?: unknown[] }>(url, { signal })
+  const rawPosts = Array.isArray(data.posts) ? data.posts : []
+  const posts = normalizePostList(rawPosts)
+  allPostsCache = { data: posts, fetchedAt: Date.now() }
 
-  return allPostsCache
+  return posts
 }
 
 export async function searchByTitleLocal(

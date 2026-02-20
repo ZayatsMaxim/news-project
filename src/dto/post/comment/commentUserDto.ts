@@ -1,11 +1,6 @@
-export class CommentUserDto {
+/** Пользователь в контексте комментария (ответ API комментариев) */
+export interface CommentUserDto {
   id: number
   username: string
   fullName: string
-
-  constructor(data: { id: number; username: string; fullName: string }) {
-    this.id = data.id
-    this.username = data.username
-    this.fullName = data.fullName
-  }
 }

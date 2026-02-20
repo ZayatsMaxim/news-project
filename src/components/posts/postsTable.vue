@@ -1,7 +1,7 @@
 <script lang="ts">
 import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
-import { usePostsStore } from '@/stores/postsStore'
+import { usePostsListStore } from '@/stores/postsListStore'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostSearchField } from '@/api/postApi'
 
@@ -11,7 +11,7 @@ export default {
 
   data() {
     return {
-      postsStore: usePostsStore(),
+      postsListStore: usePostsListStore(),
       searchInput: '',
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
@@ -28,14 +28,14 @@ export default {
 
   computed: {
     posts(): PostDto[] {
-      return this.postsStore.posts
+      return this.postsListStore.posts
     },
   },
 
   async mounted() {
-    await this.postsStore.ensurePostsLoaded()
-    this.searchInput = this.postsStore.query
-    this.searchField = this.postsStore.searchField
+    await this.postsListStore.ensurePostsLoaded()
+    this.searchInput = this.postsListStore.query
+    this.searchField = this.postsListStore.searchField
 
     await this.$nextTick()
     this.isHydrating = false
@@ -50,8 +50,8 @@ export default {
       if (this.isHydrating) return
 
       if (
-        newValue.trim() === this.postsStore.query.trim() &&
-        this.searchField === this.postsStore.searchField
+        newValue.trim() === this.postsListStore.query.trim() &&
+        this.searchField === this.postsListStore.searchField
       ) {
         return
       }
@@ -61,7 +61,7 @@ export default {
       const value = newValue
       const field = this.searchField
       this.searchTimer = setTimeout(() => {
-        this.postsStore.searchPosts(value, field)
+        this.postsListStore.searchPosts(value, field)
       }, 400)
     },
   },
@@ -80,7 +80,7 @@ export default {
         clearTimeout(this.searchTimer)
         this.searchTimer = null
       }
-      await this.postsStore.loadPage(page)
+      await this.postsListStore.loadPage(page)
     },
 
     async onSearchFieldChange(value: PostSearchField) {
@@ -92,7 +92,11 @@ export default {
         this.searchTimer = null
       }
 
-      await this.postsStore.searchPosts(this.searchInput, value)
+      await this.postsListStore.searchPosts(this.searchInput, value)
+    },
+
+    async onRefresh() {
+      await this.postsListStore.refreshPosts()
     },
   },
 }
@@ -116,7 +120,7 @@ export default {
           />
         </v-col>
 
-        <v-col cols="12" sm="8" md="9" lg="10">
+        <v-col cols="12" sm="6" md="7" lg="8">
           <v-text-field
             v-model="searchInput"
             label="Поиск"
@@ -126,9 +130,21 @@ export default {
             hide-details
           />
         </v-col>
+
+        <v-col cols="12" sm="auto">
+          <v-btn
+            color="primary"
+            variant="outlined"
+            :loading="postsListStore.isLoading"
+            :disabled="postsListStore.isLoading"
+            @click="onRefresh"
+          >
+            Обновить
+          </v-btn>
+        </v-col>
       </v-row>
 
-      <v-label>Найдено {{ postsStore.total }} постов</v-label>
+      <v-label>Найдено {{ postsListStore.total }} постов</v-label>
 
       <v-row>
         <v-col
@@ -149,9 +165,9 @@ export default {
       />
 
       <v-pagination
-        :length="postsStore.pagesAmount"
+        :length="postsListStore.pagesAmount"
         :total-visible="5"
-        :model-value="postsStore.page"
+        :model-value="postsListStore.page"
         @update:model-value="onPageChange"
       />
     </v-container>

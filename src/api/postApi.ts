@@ -1,8 +1,13 @@
-import type { PostDto, PostReactionsDto } from '@/dto/post/postDto'
+import { fetchJson } from '@/api/httpClient'
+import { apiConfig } from '@/config/api'
+import type { CommentDto } from '@/dto/post/comment/commentDto'
+import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
+import { normalizePost, normalizePostList, type RawPostDto } from '@/api/mappers/postMapper'
+import { toFiniteNumber } from '@/utils/number'
 import { searchByTitleLocal } from './postLocalTitleSearch'
 
-const POSTS_BASE_URL = 'https://dummyjson.com/posts'
+const POSTS_BASE_URL = apiConfig.postsBaseUrl
 const POSTS_SELECT = 'id,title,body,userId,reactions,views'
 
 export type PostSearchField = 'title' | 'body' | 'userId'
@@ -24,52 +29,25 @@ function emptyResponse(limit: number): PostResponseDto {
   return { posts: [], total: 0, skip: 0, limit }
 }
 
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal })
-  if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.status}`)
-  }
-  return (await response.json()) as T
+interface RawPostListResponse {
+  posts?: unknown[]
+  total?: unknown
+  skip?: unknown
+  limit?: unknown
 }
 
-async function fetchPostsJson(url: string, signal?: AbortSignal): Promise<PostResponseDto> {
-  return fetchJson<PostResponseDto>(url, signal)
-}
-
-/** Ответ GET /posts/:id (с полем tags) */
-interface RawPostById {
-  id?: unknown
-  title?: unknown
-  body?: unknown
-  userId?: unknown
-  views?: unknown
-  tags?: unknown
-  reactions?: { likes?: unknown; dislikes?: unknown }
-}
-
-function toNum(v: unknown, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-}
-
-function toReactions(raw: RawPostById['reactions']): PostReactionsDto {
+async function fetchPostsJson(
+  url: string,
+  signal: AbortSignal | undefined,
+  fallbackLimit: number,
+): Promise<PostResponseDto> {
+  const data = await fetchJson<RawPostListResponse>(url, { signal })
+  const rawPosts = Array.isArray(data.posts) ? data.posts : []
   return {
-    likes: toNum(raw?.likes, 0),
-    dislikes: toNum(raw?.dislikes, 0),
-  }
-}
-
-function normalizePostById(raw: RawPostById): PostDto {
-  const tags = Array.isArray(raw.tags)
-    ? (raw.tags.filter((t): t is string => typeof t === 'string') as string[])
-    : undefined
-  return {
-    id: toNum(raw.id, 0),
-    title: typeof raw.title === 'string' ? raw.title : '',
-    body: typeof raw.body === 'string' ? raw.body : '',
-    userId: toNum(raw.userId, 0),
-    views: toNum(raw.views, 0),
-    reactions: toReactions(raw.reactions),
-    ...(tags?.length ? { tags } : {}),
+    posts: normalizePostList(rawPosts),
+    total: toFiniteNumber(data.total, 0),
+    skip: toFiniteNumber(data.skip, 0),
+    limit: toFiniteNumber(data.limit, fallbackLimit),
   }
 }
 
@@ -77,7 +55,11 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
   const { limit, skip, query = '', field = 'title', signal } = params
   const normalizedQuery = query.trim()
   if (!normalizedQuery) {
-    return fetchPostsJson(withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`), signal)
+    return fetchPostsJson(
+      withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`),
+      signal,
+      limit,
+    )
   }
 
   switch (field) {
@@ -90,6 +72,7 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
           `${POSTS_BASE_URL}/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}&skip=${skip}`,
         ),
         signal,
+        limit,
       )
 
     case 'userId':
@@ -99,28 +82,27 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
       return fetchPostsJson(
         withSelect(`${POSTS_BASE_URL}/user/${normalizedQuery}?limit=${limit}&skip=${skip}`),
         signal,
+        limit,
       )
 
     default:
-      return fetchPostsJson(withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`), signal)
+      return fetchPostsJson(
+        withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`),
+        signal,
+        limit,
+      )
   }
 }
 
 /** Получить пост по id (GET /posts/:postId) */
 export async function getPostById(postId: number, signal?: AbortSignal): Promise<PostDto> {
-  const raw = await fetchJson<RawPostById>(`${POSTS_BASE_URL}/${postId}`, signal)
-  return normalizePostById(raw)
+  const raw = await fetchJson<RawPostDto>(`${POSTS_BASE_URL}/${postId}`, { signal })
+  return normalizePost(raw)
 }
 
 /** Ответ GET /posts/:postId/comments */
 export interface PostCommentsResponseDto {
-  comments: Array<{
-    id: number
-    body: string
-    postId: number
-    likes: number
-    user: { id: number; username: string; fullName: string }
-  }>
+  comments: CommentDto[]
   total?: number
   skip?: number
   limit?: number
@@ -131,5 +113,5 @@ export async function getPostComments(
   postId: number,
   signal?: AbortSignal,
 ): Promise<PostCommentsResponseDto> {
-  return fetchJson<PostCommentsResponseDto>(`${POSTS_BASE_URL}/${postId}/comments`, signal)
+  return fetchJson<PostCommentsResponseDto>(`${POSTS_BASE_URL}/${postId}/comments`, { signal })
 }
