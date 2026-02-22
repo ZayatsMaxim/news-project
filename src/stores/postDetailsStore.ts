@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { getPostById, getPostComments } from '@/api/postApi'
+import { getPostById, getPostComments, patchPost, type PatchPostBody } from '@/api/postApi'
 import { getUser } from '@/api/userApi'
 import type { CommentDto } from '@/dto/post/comment/commentDto'
 import type { PostDto } from '@/dto/post/postDto'
@@ -96,6 +96,27 @@ export const usePostDetailsStore = defineStore('postDetails', {
       this.modalPost = null
       this.modalUser = null
       this.modalComments = []
+    },
+
+    /**
+     * Отправить PATCH с текущими title/body поста, обновить modalPost и кэш.
+     * Возвращает обновлённый пост или null при ошибке.
+     */
+    async updateModalPost(postId: number, payload: PatchPostBody): Promise<PostDto | null> {
+      try {
+        const updated = await patchPost(postId, payload)
+        this.modalPost = updated
+        const cached = this.postDetailsCache[postId]
+        if (cached) {
+          this.postDetailsCache[postId] = { ...cached, post: updated }
+        }
+        return updated
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError')) {
+          console.error('Error updating post:', e)
+        }
+        return null
+      }
     },
   },
 })

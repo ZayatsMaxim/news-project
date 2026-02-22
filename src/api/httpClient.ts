@@ -22,3 +22,24 @@ export async function fetchJson<T>(
   }
   return (await response.json()) as T
 }
+
+/**
+ * Выполняет PATCH-запрос с JSON-телом, проверяет response.ok и возвращает JSON.
+ */
+export async function fetchPatchJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+  options?: FetchJsonOptions,
+): Promise<T> {
+  const { signal } = options ?? {}
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${response.status}`)
+  }
+  return (await response.json()) as T
+}

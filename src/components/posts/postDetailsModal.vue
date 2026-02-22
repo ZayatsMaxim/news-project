@@ -15,10 +15,15 @@ export default {
     },
   },
   emits: ['update:modelValue', 'navigate'],
-  setup() {
+  data() {
     return {
       postDetailsStore: usePostDetailsStore(),
       postsListStore: usePostsListStore(),
+      isNavigating: false,
+      isEditing: false,
+      /** Исходные значения для отката при Отмена/Закрыть */
+      originalTitle: '',
+      originalBody: '',
     }
   },
   computed: {
@@ -42,17 +47,39 @@ export default {
       const parts = [u.firstName, u.lastName].filter(Boolean).join(' ')
       return parts.trim() || '—'
     },
+    /** Страница выдачи (таблица или модалка), в которой находится текущий пост; null, если пост нигде не найден. */
+    modalContext(): { postIds: number[]; skip: number } | null {
+      if (this.postId == null) return null
+      return this.postsListStore.postsForModal(this.postId)
+    },
     currentPostIndex(): number {
-      if (this.postId == null) return -1
-      return this.postsListStore.posts.findIndex((item) => item.id === this.postId)
+      const ctx = this.modalContext
+      if (!ctx || this.postId == null) return -1
+      return ctx.postIds.indexOf(this.postId)
     },
-    prevPostId(): number | null {
-      if (this.currentPostIndex <= 0) return null
-      return this.postsListStore.posts[this.currentPostIndex - 1]?.id ?? null
+    hasPrevPost(): boolean {
+      const ctx = this.modalContext
+      if (!ctx || this.postId == null) return false
+      const index = ctx.postIds.indexOf(this.postId)
+      if (index < 0) return false
+      return index > 0 || ctx.skip > 0
     },
-    nextPostId(): number | null {
-      if (this.currentPostIndex < 0) return null
-      return this.postsListStore.posts[this.currentPostIndex + 1]?.id ?? null
+    hasNextPost(): boolean {
+      const ctx = this.modalContext
+      if (!ctx || this.postId == null) return false
+      const index = ctx.postIds.indexOf(this.postId)
+      if (index < 0) return false
+      const { postIds, skip } = ctx
+      const { total } = this.postsListStore
+      return index < postIds.length - 1 || skip + postIds.length < total
+    },
+    /** Показывать кнопку «Сохранить», когда есть несохранённые изменения. */
+    showSaveButton(): boolean {
+      if (!this.isEditing || !this.post) return false
+      return (
+        (this.post.title ?? '') !== this.originalTitle ||
+        (this.post.body ?? '') !== this.originalBody
+      )
     },
   },
   watch: {
@@ -62,19 +89,88 @@ export default {
       }
     },
     postId(newPostId: number | null) {
+      this.isEditing = false
       if (this.isOpen && newPostId != null) {
         this.postDetailsStore.fetchPostById(newPostId)
       }
     },
+    /** При загрузке поста запоминаем исходные значения для отката. */
+    post: {
+      handler(newPost: { title?: string; body?: string } | null) {
+        if (newPost) {
+          this.originalTitle = newPost.title ?? ''
+          this.originalBody = newPost.body ?? ''
+        } else {
+          this.originalTitle = ''
+          this.originalBody = ''
+        }
+      },
+      immediate: true,
+    },
   },
   methods: {
-    goToPrevPost() {
-      if (this.prevPostId == null) return
-      this.$emit('navigate', this.prevPostId)
+    /** Откатить правки в хранилище и выйти из режима редактирования. */
+    revertEdits() {
+      const p = this.postDetailsStore.modalPost
+      if (p) {
+        p.title = this.originalTitle
+        p.body = this.originalBody
+      }
     },
-    goToNextPost() {
-      if (this.nextPostId == null) return
-      this.$emit('navigate', this.nextPostId)
+    onAfterLeave() {
+      this.revertEdits()
+      this.postDetailsStore.clearModalPost()
+      this.isEditing = false
+    },
+    resetEditState() {
+      this.revertEdits()
+      this.isEditing = false
+    },
+    startEdit() {
+      this.isEditing = true
+    },
+    setPostTitle(v: string) {
+      if (this.post) this.post.title = v
+    },
+    setPostBody(v: string) {
+      if (this.post) this.post.body = v
+    },
+    async saveChanges() {
+      if (this.postId == null || !this.post) return
+      const updated = await this.postDetailsStore.updateModalPost(this.postId, {
+        title: this.post.title ?? '',
+        body: this.post.body ?? '',
+      })
+      if (updated) {
+        this.originalTitle = updated.title ?? ''
+        this.originalBody = updated.body ?? ''
+        this.isEditing = false
+        const listPost = this.postsListStore.posts.find((p) => p.id === this.postId)
+        if (listPost) {
+          listPost.title = updated.title
+          listPost.body = updated.body
+        }
+      }
+    },
+    async goToPrevPost() {
+      if (!this.hasPrevPost || this.isNavigating || this.postId == null) return
+      this.isNavigating = true
+      try {
+        const id = await this.postsListStore.getPrevPostId(this.postId)
+        if (id != null) this.$emit('navigate', id)
+      } finally {
+        this.isNavigating = false
+      }
+    },
+    async goToNextPost() {
+      if (!this.hasNextPost || this.isNavigating || this.postId == null) return
+      this.isNavigating = true
+      try {
+        const id = await this.postsListStore.getNextPostId(this.postId)
+        if (id != null) this.$emit('navigate', id)
+      } finally {
+        this.isNavigating = false
+      }
     },
   },
 }
@@ -85,20 +181,59 @@ export default {
     v-model="isOpen"
     persistent
     max-width="1200"
-    @after-leave="postDetailsStore.clearModalPost()"
+    @after-leave="onAfterLeave"
   >
     <div class="modal-layout">
       <button
         type="button"
         class="nav-zone"
-        :class="{ 'nav-zone-disabled': prevPostId == null }"
+        :class="{ 'nav-zone-disabled': !hasPrevPost || isNavigating || isEditing }"
+        :disabled="!hasPrevPost || isNavigating || isEditing"
         @click.stop="goToPrevPost"
       >
         <span class="nav-arrow">&lt;</span>
       </button>
 
       <v-card class="modal-card">
-        <v-card-title>{{ post?.title ?? (postId != null ? `Пост #${postId}` : 'Пост') }}</v-card-title>
+        <div class="modal-card-header">
+          <template v-if="postDetailsStore.modalPostLoading || !post">
+            <v-card-title class="modal-title-text">
+              {{ postId != null ? `Пост #${postId}` : 'Пост' }}
+            </v-card-title>
+          </template>
+          <template v-else>
+            <v-text-field
+              :model-value="post.title ?? ''"
+              :variant="isEditing ? 'outlined' : 'plain'"
+              density="compact"
+              hide-details
+              class="modal-title-text modal-title-edit"
+              placeholder="Заголовок"
+              :readonly="!isEditing"
+              @update:model-value="setPostTitle"
+            />
+          </template>
+          <div class="modal-header-actions">
+            <v-btn
+              v-if="post && !postDetailsStore.modalPostLoading"
+              :icon="isEditing ? 'mdi-undo' : 'mdi-pencil'"
+              :color="isEditing ? 'error' : undefined"
+              variant="text"
+              size="small"
+              :aria-label="isEditing ? 'Отменить редактирование' : 'Редактировать'"
+              @click="isEditing ? resetEditState() : startEdit()"
+            />
+            <v-btn
+              v-if="showSaveButton"
+              icon="mdi-content-save"
+              color="success"
+              variant="text"
+              size="small"
+              aria-label="Сохранить"
+              @click="saveChanges"
+            />
+          </div>
+        </div>
 
         <template v-if="postDetailsStore.modalPostLoading">
           <v-card-text class="loading-placeholder">Загрузка</v-card-text>
@@ -110,14 +245,20 @@ export default {
             <div v-if="user.jobTitle" class="author-meta">Должность: {{ user.jobTitle }}</div>
             <div v-if="user.department" class="author-meta">Отдел: {{ user.department }}</div>
           </v-card-text>
-          <v-card-text>{{ post.body }}</v-card-text>
+          <v-card-text class="pt-0">
+            <v-textarea
+              :model-value="post.body ?? ''"
+              :variant="isEditing ? 'outlined' : 'plain'"
+              hide-details
+              rows="6"
+              class="modal-body-edit"
+              placeholder="Текст новости"
+              :readonly="!isEditing"
+              @update:model-value="setPostBody"
+            />
+          </v-card-text>
           <v-card-text v-if="post.tags?.length" class="pt-0 tags-wrap">
-            <v-chip
-              v-for="tag in post.tags"
-              :key="tag"
-              size="small"
-              variant="tonal"
-            >
+            <v-chip v-for="tag in post.tags" :key="tag" size="small" variant="tonal">
               {{ tag }}
             </v-chip>
           </v-card-text>
@@ -161,7 +302,8 @@ export default {
       <button
         type="button"
         class="nav-zone"
-        :class="{ 'nav-zone-disabled': nextPostId == null }"
+        :class="{ 'nav-zone-disabled': !hasNextPost || isNavigating || isEditing }"
+        :disabled="!hasNextPost || isNavigating || isEditing"
         @click.stop="goToNextPost"
       >
         <span class="nav-arrow">&gt;</span>
@@ -184,6 +326,38 @@ export default {
 .modal-card {
   max-height: 90vh;
   overflow: auto;
+}
+
+.modal-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 16px 0;
+}
+
+.modal-title-text,
+.modal-title-edit {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-title-text {
+  padding-left: 0;
+}
+
+.modal-title-edit {
+  padding-top: 0;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.modal-body-edit {
+  width: 100%;
 }
 
 .nav-zone {
