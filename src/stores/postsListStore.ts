@@ -9,6 +9,8 @@ import { toFiniteNumber } from '@/utils/number'
 const STORAGE_KEY = 'posts_list_store_state'
 const SEARCH_FIELDS: PostSearchField[] = ['title', 'body', 'userId']
 
+const requestControllerRef = { current: null as AbortController | null }
+
 interface StoredPostsState {
   posts: PostDto[]
   total: number
@@ -28,7 +30,6 @@ export const usePostsListStore = defineStore('postsList', {
     query: '',
     searchField: 'title' as PostSearchField,
     isLoading: false,
-    requestController: null as AbortController | null,
     /** Страница, загруженная для навигации в модалке (пост вне текущей страницы таблицы). */
     modalPageSkip: null as number | null,
     /** Id постов на странице модалки (только id, без полных постов). */
@@ -96,15 +97,15 @@ export const usePostsListStore = defineStore('postsList', {
       const resetPage = options.resetPage ?? false
       const requestSkip = resetPage ? 0 : this.skip
 
-      if (this.requestController) {
-        this.requestController.abort()
+      if (requestControllerRef.current) {
+        requestControllerRef.current.abort()
       }
-      this.requestController = new AbortController()
+      requestControllerRef.current = new AbortController()
       this.modalPageSkip = null
       this.modalPageIds = []
 
       this.isLoading = true
-      const signal = this.requestController.signal
+      const signal = requestControllerRef.current.signal
       try {
         const data: PostResponseDto = await getPosts({
           limit: this.limit,
@@ -134,7 +135,7 @@ export const usePostsListStore = defineStore('postsList', {
         }
       } finally {
         this.isLoading = false
-        this.requestController = null
+        requestControllerRef.current = null
       }
     },
 
@@ -153,6 +154,13 @@ export const usePostsListStore = defineStore('postsList', {
     async ensurePostsLoaded() {
       if (this.hydrateFromStorage()) return
       await this.fetchPosts()
+    },
+
+    updatePostInList(postId: number, fields: { title?: string; body?: string }) {
+      const post = this.posts.find((p) => p.id === postId)
+      if (!post) return
+      if (fields.title !== undefined) post.title = fields.title
+      if (fields.body !== undefined) post.body = fields.body
     },
 
     async refreshPosts() {

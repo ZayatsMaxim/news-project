@@ -21,7 +21,12 @@ export default {
 </script>
 
 <template>
-  <v-card class="post-card" :title="post.title" :subtitle="`ID автора: ${post.userId}`" @click="$emit('open')">
+  <v-card
+    class="post-card"
+    :title="post.title"
+    :subtitle="`ID автора: ${post.userId}`"
+    @click="$emit('open')"
+  >
     <v-card-text>
       {{ truncatedPostBody }}
     </v-card-text>
@@ -59,5 +64,15 @@ export default {
 
 .post-card {
   cursor: pointer;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+.post-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 </style>

@@ -4,6 +4,7 @@ import { getUser } from '@/api/userApi'
 import type { CommentDto } from '@/dto/post/comment/commentDto'
 import type { PostDto } from '@/dto/post/postDto'
 import type { UserDto } from '@/dto/user/userDto'
+import { usePostsListStore } from '@/stores/postsListStore'
 
 export interface CachedPostDetails {
   post: PostDto
@@ -11,22 +12,66 @@ export interface CachedPostDetails {
   comments: CommentDto[]
 }
 
+const modalRequestControllerRef = { current: null as AbortController | null }
+
 export const usePostDetailsStore = defineStore('postDetails', {
   state: () => ({
     modalPost: null as PostDto | null,
     modalUser: null as UserDto | null,
     modalComments: [] as CommentDto[],
     modalPostLoading: false,
-    modalRequestController: null as AbortController | null,
     modalRequestedPostId: null as number | null,
     /** Кэш загруженных деталей постов (postId -> post, user, comments) */
     postDetailsCache: {} as Record<number, CachedPostDetails>,
+    /** Исходные значения полей поста для отката при отмене редактирования. */
+    originalTitle: '',
+    originalBody: '',
   }),
 
+  getters: {
+    hasUnsavedChanges(): boolean {
+      if (!this.modalPost) return false
+      return (
+        (this.modalPost.title ?? '') !== this.originalTitle ||
+        (this.modalPost.body ?? '') !== this.originalBody
+      )
+    },
+  },
+
   actions: {
+    snapshotOriginal() {
+      this.originalTitle = this.modalPost?.title ?? ''
+      this.originalBody = this.modalPost?.body ?? ''
+    },
+
+    revertEdits() {
+      if (this.modalPost) {
+        this.modalPost.title = this.originalTitle
+        this.modalPost.body = this.originalBody
+      }
+    },
+
+    async saveChanges(postId: number): Promise<boolean> {
+      if (!this.modalPost) return false
+
+      const updated = await this.updateModalPost(postId, {
+        title: this.modalPost.title ?? '',
+        body: this.modalPost.body ?? '',
+      })
+      if (!updated) return false
+
+      this.originalTitle = updated.title ?? ''
+      this.originalBody = updated.body ?? ''
+
+      const postsListStore = usePostsListStore()
+      postsListStore.updatePostInList(postId, { title: updated.title, body: updated.body })
+
+      return true
+    },
+
     async fetchPostById(postId: number) {
-      if (this.modalRequestController) {
-        this.modalRequestController.abort()
+      if (modalRequestControllerRef.current) {
+        modalRequestControllerRef.current.abort()
       }
       this.modalRequestedPostId = postId
 
@@ -36,12 +81,12 @@ export const usePostDetailsStore = defineStore('postDetails', {
         this.modalUser = cached.user
         this.modalComments = cached.comments
         this.modalPostLoading = false
-        this.modalRequestController = null
+        modalRequestControllerRef.current = null
         return
       }
 
       const requestController = new AbortController()
-      this.modalRequestController = requestController
+      modalRequestControllerRef.current = requestController
       const signal = requestController.signal
 
       this.modalPostLoading = true
@@ -58,17 +103,28 @@ export const usePostDetailsStore = defineStore('postDetails', {
 
         if (signal.aborted || this.modalRequestedPostId !== postId) return
 
-        const user = userResult.status === 'fulfilled' && userResult.value != null ? userResult.value : null
-        const comments = commentsResult.status === 'fulfilled' ? (commentsResult.value.comments ?? []) : []
+        const user =
+          userResult.status === 'fulfilled' && userResult.value != null ? userResult.value : null
+        const comments =
+          commentsResult.status === 'fulfilled' ? (commentsResult.value.comments ?? []) : []
 
         this.modalPost = post
         this.modalUser = user
         this.modalComments = comments
 
-        if (userResult.status === 'rejected' && !(userResult.reason instanceof DOMException && userResult.reason.name === 'AbortError')) {
+        if (
+          userResult.status === 'rejected' &&
+          !(userResult.reason instanceof DOMException && userResult.reason.name === 'AbortError')
+        ) {
           console.error('Error fetching user:', userResult.reason)
         }
-        if (commentsResult.status === 'rejected' && !(commentsResult.reason instanceof DOMException && commentsResult.reason.name === 'AbortError')) {
+        if (
+          commentsResult.status === 'rejected' &&
+          !(
+            commentsResult.reason instanceof DOMException &&
+            commentsResult.reason.name === 'AbortError'
+          )
+        ) {
           console.error('Error fetching comments:', commentsResult.reason)
         }
 
@@ -81,16 +137,16 @@ export const usePostDetailsStore = defineStore('postDetails', {
         if (this.modalRequestedPostId === postId) {
           this.modalPostLoading = false
         }
-        if (this.modalRequestController === requestController) {
-          this.modalRequestController = null
+        if (modalRequestControllerRef.current === requestController) {
+          modalRequestControllerRef.current = null
         }
       }
     },
 
     clearModalPost() {
-      if (this.modalRequestController) {
-        this.modalRequestController.abort()
-        this.modalRequestController = null
+      if (modalRequestControllerRef.current) {
+        modalRequestControllerRef.current.abort()
+        modalRequestControllerRef.current = null
       }
       this.modalRequestedPostId = null
       this.modalPost = null

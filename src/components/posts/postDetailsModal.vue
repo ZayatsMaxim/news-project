@@ -1,4 +1,5 @@
 <script lang="ts">
+import { mapStores } from 'pinia'
 import { usePostDetailsStore } from '@/stores/postDetailsStore'
 import { usePostsListStore } from '@/stores/postsListStore'
 
@@ -15,18 +16,9 @@ export default {
     },
   },
   emits: ['update:modelValue', 'navigate'],
-  data() {
-    return {
-      postDetailsStore: usePostDetailsStore(),
-      postsListStore: usePostsListStore(),
-      isNavigating: false,
-      isEditing: false,
-      /** Исходные значения для отката при Отмена/Закрыть */
-      originalTitle: '',
-      originalBody: '',
-    }
-  },
+
   computed: {
+    ...mapStores(usePostDetailsStore, usePostsListStore),
     isOpen: {
       get(): boolean {
         return this.modelValue
@@ -73,15 +65,18 @@ export default {
       const { total } = this.postsListStore
       return index < postIds.length - 1 || skip + postIds.length < total
     },
-    /** Показывать кнопку «Сохранить», когда есть несохранённые изменения. */
     showSaveButton(): boolean {
-      if (!this.isEditing || !this.post) return false
-      return (
-        (this.post.title ?? '') !== this.originalTitle ||
-        (this.post.body ?? '') !== this.originalBody
-      )
+      return this.isEditing && this.postDetailsStore.hasUnsavedChanges
     },
   },
+
+  data() {
+    return {
+      isNavigating: false,
+      isEditing: false,
+    }
+  },
+
   watch: {
     isOpen(open: boolean) {
       if (open && this.postId != null) {
@@ -94,63 +89,30 @@ export default {
         this.postDetailsStore.fetchPostById(newPostId)
       }
     },
-    /** При загрузке поста запоминаем исходные значения для отката. */
     post: {
-      handler(newPost: { title?: string; body?: string } | null) {
-        if (newPost) {
-          this.originalTitle = newPost.title ?? ''
-          this.originalBody = newPost.body ?? ''
-        } else {
-          this.originalTitle = ''
-          this.originalBody = ''
-        }
+      handler() {
+        this.postDetailsStore.snapshotOriginal()
       },
       immediate: true,
     },
   },
   methods: {
-    /** Откатить правки в хранилище и выйти из режима редактирования. */
-    revertEdits() {
-      const p = this.postDetailsStore.modalPost
-      if (p) {
-        p.title = this.originalTitle
-        p.body = this.originalBody
-      }
-    },
     onAfterLeave() {
-      this.revertEdits()
+      this.postDetailsStore.revertEdits()
       this.postDetailsStore.clearModalPost()
       this.isEditing = false
     },
     resetEditState() {
-      this.revertEdits()
+      this.postDetailsStore.revertEdits()
       this.isEditing = false
     },
     startEdit() {
       this.isEditing = true
     },
-    setPostTitle(v: string) {
-      if (this.post) this.post.title = v
-    },
-    setPostBody(v: string) {
-      if (this.post) this.post.body = v
-    },
     async saveChanges() {
-      if (this.postId == null || !this.post) return
-      const updated = await this.postDetailsStore.updateModalPost(this.postId, {
-        title: this.post.title ?? '',
-        body: this.post.body ?? '',
-      })
-      if (updated) {
-        this.originalTitle = updated.title ?? ''
-        this.originalBody = updated.body ?? ''
-        this.isEditing = false
-        const listPost = this.postsListStore.posts.find((p) => p.id === this.postId)
-        if (listPost) {
-          listPost.title = updated.title
-          listPost.body = updated.body
-        }
-      }
+      if (this.postId == null) return
+      const saved = await this.postDetailsStore.saveChanges(this.postId)
+      if (saved) this.isEditing = false
     },
     async goToPrevPost() {
       if (!this.hasPrevPost || this.isNavigating || this.postId == null) return
@@ -177,12 +139,7 @@ export default {
 </script>
 
 <template>
-  <v-dialog
-    v-model="isOpen"
-    persistent
-    max-width="1200"
-    @after-leave="onAfterLeave"
-  >
+  <v-dialog v-model="isOpen" persistent max-width="1200" @after-leave="onAfterLeave">
     <div class="modal-layout">
       <button
         type="button"
@@ -203,14 +160,13 @@ export default {
           </template>
           <template v-else>
             <v-text-field
-              :model-value="post.title ?? ''"
+              v-model="post.title"
               :variant="isEditing ? 'outlined' : 'plain'"
               density="compact"
               hide-details
               class="modal-title-text modal-title-edit"
               placeholder="Заголовок"
               :readonly="!isEditing"
-              @update:model-value="setPostTitle"
             />
           </template>
           <div class="modal-header-actions">
@@ -247,14 +203,13 @@ export default {
           </v-card-text>
           <v-card-text class="pt-0">
             <v-textarea
-              :model-value="post.body ?? ''"
+              v-model="post.body"
               :variant="isEditing ? 'outlined' : 'plain'"
               hide-details
               rows="6"
               class="modal-body-edit"
               placeholder="Текст новости"
               :readonly="!isEditing"
-              @update:model-value="setPostBody"
             />
           </v-card-text>
           <v-card-text v-if="post.tags?.length" class="pt-0 tags-wrap">

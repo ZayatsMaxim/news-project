@@ -1,4 +1,5 @@
 <script lang="ts">
+import { mapStores } from 'pinia'
 import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsListStore } from '@/stores/postsListStore'
@@ -9,9 +10,15 @@ export default {
   name: 'PostsTable',
   components: { PostCard, PostDetailsModal },
 
+  computed: {
+    ...mapStores(usePostsListStore),
+    posts(): PostDto[] {
+      return this.postsListStore.posts
+    },
+  },
+
   data() {
     return {
-      postsListStore: usePostsListStore(),
       searchInput: '',
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
@@ -24,12 +31,6 @@ export default {
         { title: 'ID автора', value: 'userId' },
       ],
     }
-  },
-
-  computed: {
-    posts(): PostDto[] {
-      return this.postsListStore.posts
-    },
   },
 
   async mounted() {
@@ -147,13 +148,7 @@ export default {
       <v-label>Найдено {{ postsListStore.total }} постов</v-label>
 
       <v-row>
-        <v-col
-          v-for="post in posts"
-          :key="post.id"
-          cols="12"
-          sm="6"
-          md="4"
-        >
+        <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
           <PostCard :post="post" @open="openPostModal(post.id)" />
         </v-col>
       </v-row>

@@ -20,9 +20,9 @@ export interface GetPostsParams {
   signal?: AbortSignal
 }
 
-function withSelect(url: string): string {
+function withSelectParam(url: string, select: string): string {
   const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}select=${encodeURIComponent(POSTS_SELECT)}`
+  return `${url}${sep}select=${encodeURIComponent(select)}`
 }
 
 function emptyResponse(limit: number): PostResponseDto {
@@ -56,7 +56,7 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
   const normalizedQuery = query.trim()
   if (!normalizedQuery) {
     return fetchPostsJson(
-      withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`),
+      withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
       signal,
       limit,
     )
@@ -68,8 +68,9 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
 
     case 'body':
       return fetchPostsJson(
-        withSelect(
+        withSelectParam(
           `${POSTS_BASE_URL}/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}&skip=${skip}`,
+          POSTS_SELECT,
         ),
         signal,
         limit,
@@ -80,23 +81,18 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
         return emptyResponse(limit)
       }
       return fetchPostsJson(
-        withSelect(`${POSTS_BASE_URL}/user/${normalizedQuery}?limit=${limit}&skip=${skip}`),
+        withSelectParam(`${POSTS_BASE_URL}/user/${normalizedQuery}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
         signal,
         limit,
       )
 
     default:
       return fetchPostsJson(
-        withSelect(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`),
+        withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
         signal,
         limit,
       )
   }
-}
-
-function withSelectParam(url: string, select: string): string {
-  const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}select=${encodeURIComponent(select)}`
 }
 
 /** Параметры для запроса только id постов (лёгкий запрос для навигации в модалке). */
