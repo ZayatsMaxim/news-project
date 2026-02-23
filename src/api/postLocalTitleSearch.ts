@@ -14,7 +14,7 @@ import type { PostResponseDto } from '@/dto/post/postResponseDto'
  */
 
 const POSTS_BASE_URL = apiConfig.postsBaseUrl
-const POSTS_SELECT = 'id,title,body,userId,reactions,views'
+const POSTS_SELECT = apiConfig.postsSelect
 
 /** Время жизни кэша полного списка постов (мс). По истечении следующий поиск выполнит новый запрос к API. */
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 минут

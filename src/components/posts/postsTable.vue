@@ -4,7 +4,6 @@ import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsListStore } from '@/stores/postsListStore'
 import type { PostDto } from '@/dto/post/postDto'
-import type { PostSearchField } from '@/api/postApi'
 
 export default {
   name: 'PostsTable',
@@ -19,12 +18,10 @@ export default {
 
   data() {
     return {
-      searchInput: '',
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
       isPostModalOpen: false,
       selectedPostId: null as number | null,
-      searchField: 'title' as PostSearchField,
       searchFieldOptions: [
         { title: 'Заголовок', value: 'title' },
         { title: 'Текст', value: 'body' },
@@ -35,9 +32,6 @@ export default {
 
   async mounted() {
     await this.postsListStore.ensurePostsLoaded()
-    this.searchInput = this.postsListStore.query
-    this.searchField = this.postsListStore.searchField
-
     await this.$nextTick()
     this.isHydrating = false
   },
@@ -47,23 +41,22 @@ export default {
   },
 
   watch: {
-    searchInput(newValue: string) {
+    'postsListStore.query'() {
       if (this.isHydrating) return
-
-      if (
-        newValue.trim() === this.postsListStore.query.trim() &&
-        this.searchField === this.postsListStore.searchField
-      ) {
-        return
-      }
-
       if (this.searchTimer) clearTimeout(this.searchTimer)
-
-      const value = newValue
-      const field = this.searchField
+      const query = this.postsListStore.query
+      const field = this.postsListStore.searchField
       this.searchTimer = setTimeout(() => {
-        this.postsListStore.searchPosts(value, field)
+        this.postsListStore.searchPosts(query, field)
       }, 400)
+    },
+    'postsListStore.searchField'() {
+      if (this.isHydrating) return
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer)
+        this.searchTimer = null
+      }
+      this.postsListStore.searchPosts(this.postsListStore.query, this.postsListStore.searchField)
     },
   },
 
@@ -84,18 +77,6 @@ export default {
       await this.postsListStore.loadPage(page)
     },
 
-    async onSearchFieldChange(value: PostSearchField) {
-      this.searchField = value
-      if (this.isHydrating) return
-
-      if (this.searchTimer) {
-        clearTimeout(this.searchTimer)
-        this.searchTimer = null
-      }
-
-      await this.postsListStore.searchPosts(this.searchInput, value)
-    },
-
     async onRefresh() {
       await this.postsListStore.refreshPosts()
     },
@@ -109,7 +90,7 @@ export default {
       <v-row class="filters-row" align="center">
         <v-col cols="12" sm="4" md="3" lg="2">
           <v-select
-            v-model="searchField"
+            v-model="postsListStore.searchField"
             :items="searchFieldOptions"
             item-title="title"
             item-value="value"
@@ -117,13 +98,12 @@ export default {
             density="compact"
             variant="outlined"
             hide-details
-            @update:model-value="onSearchFieldChange"
           />
         </v-col>
 
         <v-col cols="12" sm="6" md="7" lg="8">
           <v-text-field
-            v-model="searchInput"
+            v-model="postsListStore.query"
             label="Поиск"
             append-inner-icon="mdi-magnify"
             density="compact"

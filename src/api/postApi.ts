@@ -8,7 +8,7 @@ import { toFiniteNumber } from '@/utils/number'
 import { searchByTitleLocal } from './postLocalTitleSearch'
 
 const POSTS_BASE_URL = apiConfig.postsBaseUrl
-const POSTS_SELECT = 'id,title,body,userId,reactions,views'
+const POSTS_SELECT = apiConfig.postsSelect
 
 export type PostSearchField = 'title' | 'body' | 'userId'
 
@@ -18,6 +18,37 @@ export interface GetPostsParams {
   query?: string
   field?: PostSearchField
   signal?: AbortSignal
+}
+
+type PostListRoute =
+  | { kind: 'remote'; url: string }
+  | { kind: 'local'; query: string }
+  | { kind: 'empty' }
+
+function resolvePostListRoute(
+  query: string,
+  field: PostSearchField,
+  limit: number,
+  skip: number,
+): PostListRoute {
+  if (!query) {
+    return { kind: 'remote', url: `${POSTS_BASE_URL}?limit=${limit}&skip=${skip}` }
+  }
+  switch (field) {
+    case 'title':
+      return { kind: 'local', query }
+    case 'body':
+      return {
+        kind: 'remote',
+        url: `${POSTS_BASE_URL}/search?q=${encodeURIComponent(query)}&limit=${limit}&skip=${skip}`,
+      }
+    case 'userId':
+      return /^\d+$/.test(query)
+        ? { kind: 'remote', url: `${POSTS_BASE_URL}/user/${query}?limit=${limit}&skip=${skip}` }
+        : { kind: 'empty' }
+    default:
+      return { kind: 'remote', url: `${POSTS_BASE_URL}?limit=${limit}&skip=${skip}` }
+  }
 }
 
 function withSelectParam(url: string, select: string): string {
@@ -53,105 +84,22 @@ async function fetchPostsJson(
 
 export async function getPosts(params: GetPostsParams): Promise<PostResponseDto> {
   const { limit, skip, query = '', field = 'title', signal } = params
-  const normalizedQuery = query.trim()
-  if (!normalizedQuery) {
-    return fetchPostsJson(
-      withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
-      signal,
-      limit,
-    )
-  }
+  const route = resolvePostListRoute(query.trim(), field, limit, skip)
 
-  switch (field) {
-    case 'title':
-      return searchByTitleLocal(normalizedQuery, skip, limit, signal)
-
-    case 'body':
-      return fetchPostsJson(
-        withSelectParam(
-          `${POSTS_BASE_URL}/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}&skip=${skip}`,
-          POSTS_SELECT,
-        ),
-        signal,
-        limit,
-      )
-
-    case 'userId':
-      if (!/^\d+$/.test(normalizedQuery)) {
-        return emptyResponse(limit)
-      }
-      return fetchPostsJson(
-        withSelectParam(`${POSTS_BASE_URL}/user/${normalizedQuery}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
-        signal,
-        limit,
-      )
-
-    default:
-      return fetchPostsJson(
-        withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, POSTS_SELECT),
-        signal,
-        limit,
-      )
+  switch (route.kind) {
+    case 'local':
+      return searchByTitleLocal(route.query, skip, limit, signal)
+    case 'empty':
+      return emptyResponse(limit)
+    case 'remote':
+      return fetchPostsJson(withSelectParam(route.url, POSTS_SELECT), signal, limit)
   }
 }
 
-/** Параметры для запроса только id постов (лёгкий запрос для навигации в модалке). */
-export interface GetPostIdsParams {
-  limit: number
-  skip: number
-  query?: string
-  field?: PostSearchField
-}
-
-/** Возвращает только id постов на странице (select=id); для навигации в модалке без полной загрузки. */
-export async function getPostIds(params: GetPostIdsParams): Promise<number[]> {
-  const { limit, skip, query = '', field = 'title' } = params
-  const normalizedQuery = query.trim()
-  const idOnly = 'id'
-
-  if (!normalizedQuery) {
-    const data = await fetchJson<RawPostListResponse>(
-      withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, idOnly),
-    )
-    const raw = Array.isArray(data.posts) ? data.posts : []
-    return raw.map((p) => toFiniteNumber((p as { id?: unknown })?.id, 0)).filter((id) => id > 0)
-  }
-
-  switch (field) {
-    case 'title': {
-      const data = await searchByTitleLocal(normalizedQuery, skip, limit)
-      return data.posts.map((p) => p.id)
-    }
-    case 'body': {
-      const data = await fetchJson<RawPostListResponse>(
-        withSelectParam(
-          `${POSTS_BASE_URL}/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}&skip=${skip}`,
-          idOnly,
-        ),
-      )
-      const raw = Array.isArray(data.posts) ? data.posts : []
-      return raw.map((p) => toFiniteNumber((p as { id?: unknown })?.id, 0)).filter((id) => id > 0)
-    }
-    case 'userId':
-      if (!/^\d+$/.test(normalizedQuery)) return []
-      {
-        const userData = await fetchJson<RawPostListResponse>(
-          withSelectParam(
-            `${POSTS_BASE_URL}/user/${normalizedQuery}?limit=${limit}&skip=${skip}`,
-            idOnly,
-          ),
-        )
-        const userRaw = Array.isArray(userData.posts) ? userData.posts : []
-        return userRaw.map((p) => toFiniteNumber((p as { id?: unknown })?.id, 0)).filter((id) => id > 0)
-      }
-    default: {
-      const data = await fetchJson<RawPostListResponse>(
-        withSelectParam(`${POSTS_BASE_URL}?limit=${limit}&skip=${skip}`, idOnly),
-      )
-      const raw = Array.isArray(data.posts) ? data.posts : []
-      return raw.map((p) => toFiniteNumber((p as { id?: unknown })?.id, 0)).filter((id) => id > 0)
-    }
-  }
+/** Возвращает только id постов на странице; для навигации в модалке без полной загрузки. */
+export async function getPostIds(params: Omit<GetPostsParams, 'signal'>): Promise<number[]> {
+  const data = await getPosts(params)
+  return data.posts.map((p) => p.id)
 }
 
 /** Получить пост по id (GET /posts/:postId) */
