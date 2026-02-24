@@ -127,10 +127,17 @@ export default {
 
       <v-label>Найдено {{ postsListStore.total }} постов</v-label>
 
-      <v-row>
-        <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
-          <PostCard :post="post" @open="openPostModal(post.id)" />
-        </v-col>
+      <v-row class="cards-row">
+        <template v-if="postsListStore.isLoading">
+          <v-col v-for="n in postsListStore.limit" :key="'skeleton-' + n" cols="12" sm="6" md="4">
+            <PostCard :loading="true" />
+          </v-col>
+        </template>
+        <template v-else>
+          <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
+            <PostCard :post="post" @open="openPostModal(post.id)" />
+          </v-col>
+        </template>
       </v-row>
 
       <PostDetailsModal
@@ -152,5 +159,9 @@ export default {
 <style scoped>
 .filters-row {
   row-gap: 8px;
+}
+
+.cards-row :deep(.v-col) {
+  display: flex;
 }
 </style>

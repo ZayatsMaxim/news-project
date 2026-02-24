@@ -68,6 +68,12 @@ export default {
     showSaveButton(): boolean {
       return this.isEditing && this.postDetailsStore.hasUnsavedChanges
     },
+    /** Показывать скелетон: идёт загрузка или открыт другой пост, чем загруженный. */
+    showModalSkeleton(): boolean {
+      if (this.postDetailsStore.modalPostLoading) return true
+      if (this.postId == null) return false
+      return !this.post || this.post.id !== this.postId
+    },
   },
 
   data() {
@@ -153,10 +159,15 @@ export default {
 
       <v-card class="modal-card">
         <div class="modal-card-header">
-          <template v-if="postDetailsStore.modalPostLoading || !post">
-            <v-card-title class="modal-title-text">
+          <template v-if="showModalSkeleton || !post">
+            <v-card-title v-if="!showModalSkeleton" class="modal-title-text">
               {{ postId != null ? `Пост #${postId}` : 'Пост' }}
             </v-card-title>
+            <v-skeleton-loader
+              v-else
+              type="heading"
+              class="modal-title-text modal-skeleton-title"
+            />
           </template>
           <template v-else>
             <v-text-field
@@ -171,7 +182,7 @@ export default {
           </template>
           <div class="modal-header-actions">
             <v-btn
-              v-if="post && !postDetailsStore.modalPostLoading"
+              v-if="post && !showModalSkeleton"
               :icon="isEditing ? 'mdi-undo' : 'mdi-pencil'"
               :color="isEditing ? 'error' : undefined"
               variant="text"
@@ -191,8 +202,19 @@ export default {
           </div>
         </div>
 
-        <template v-if="postDetailsStore.modalPostLoading">
-          <v-card-text class="loading-placeholder">Загрузка</v-card-text>
+        <template v-if="showModalSkeleton">
+          <v-card-text class="modal-skeleton-body">
+            <v-skeleton-loader type="list-item-two-line" class="modal-skeleton-author" />
+            <v-skeleton-loader type="paragraph" class="modal-skeleton-paragraph" />
+            <div class="meta modal-skeleton-meta">
+              <v-skeleton-loader
+                v-for="i in 3"
+                :key="i"
+                type="chip"
+                class="modal-skeleton-meta-item"
+              />
+            </div>
+          </v-card-text>
         </template>
 
         <template v-else-if="post">
@@ -395,9 +417,78 @@ export default {
   font-size: 0.875rem;
 }
 
-.loading-placeholder {
-  text-align: center;
-  padding: 32px 16px;
-  color: rgba(var(--v-theme-on-surface), 0.7);
+.modal-skeleton-title {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.modal-skeleton-title :deep(.v-skeleton-loader) {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.modal-skeleton-title :deep(.v-skeleton-loader__heading) {
+  margin-left: 0 !important;
+}
+
+.modal-skeleton-body {
+  padding: 16px;
+  padding-left: 16px;
+  margin-left: 0;
+}
+
+.modal-skeleton-body :deep(.v-skeleton-loader) {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.modal-skeleton-body :deep(.v-skeleton-loader__text) {
+  margin-left: 0 !important;
+}
+
+.modal-skeleton-body :deep(.v-skeleton-loader__heading) {
+  margin-left: 0 !important;
+}
+
+.modal-skeleton-author {
+  margin-bottom: 8px;
+  margin-left: 0;
+}
+
+.modal-skeleton-author :deep(.v-skeleton-loader) {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.modal-skeleton-paragraph {
+  margin-bottom: 16px;
+  margin-left: 0;
+}
+
+.modal-skeleton-paragraph :deep(.v-skeleton-loader) {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.modal-skeleton-meta {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding: 0;
+  margin-left: 0;
+}
+
+.modal-skeleton-meta-item {
+  flex-shrink: 0;
+  width: 48px;
+  max-height: 24px;
+  margin: 0;
+}
+
+.modal-skeleton-meta-item :deep(.v-skeleton-loader__chip) {
+  height: 24px;
+  margin: 0;
 }
 </style>
