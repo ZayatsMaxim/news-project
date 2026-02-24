@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { invalidateLocalPostsCache } from '@/api/postLocalTitleSearch'
-import { getPosts, getPostIds, type PostSearchField } from '@/api/postApi'
+import { getPosts, type PostSearchField } from '@/api/postApi'
 import { normalizePostList } from '@/api/mappers/postMapper'
+import { apiConfig } from '@/config/api'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
+import { isAbortError } from '@/utils/error'
 import { toFiniteNumber } from '@/utils/number'
 
 const STORAGE_KEY = 'posts_list_store_state'
@@ -30,25 +31,11 @@ export const usePostsListStore = defineStore('postsList', {
     query: '',
     searchField: 'title' as PostSearchField,
     isLoading: false,
-    /** Страница, загруженная для навигации в модалке (пост вне текущей страницы таблицы). */
-    modalPageSkip: null as number | null,
-    /** Id постов на странице модалки (только id, без полных постов). */
-    modalPageIds: [] as number[],
   }),
 
   getters: {
     pagesAmount: (state) => Math.max(1, Math.ceil(state.total / state.limit)),
     requiredSkipAmount: (state) => (state.page - 1) * state.limit,
-    /** Страница выдачи (postIds + skip), в которой находится postId; для расчёта prev/next в модалке. */
-    postsForModal(state): (postId: number) => { postIds: number[]; skip: number } | null {
-      return (postId: number) => {
-        const mainIds = state.posts.map((p) => p.id)
-        if (mainIds.includes(postId)) return { postIds: mainIds, skip: state.skip }
-        if (state.modalPageIds.includes(postId) && state.modalPageSkip != null)
-          return { postIds: state.modalPageIds, skip: state.modalPageSkip }
-        return null
-      }
-    },
   },
 
   actions: {
@@ -101,8 +88,6 @@ export const usePostsListStore = defineStore('postsList', {
         requestControllerRef.current.abort()
       }
       requestControllerRef.current = new AbortController()
-      this.modalPageSkip = null
-      this.modalPageIds = []
 
       this.isLoading = true
       const signal = requestControllerRef.current.signal
@@ -113,6 +98,7 @@ export const usePostsListStore = defineStore('postsList', {
           query: this.query,
           field: this.searchField,
           signal,
+          select: apiConfig.postsSelect,
         })
 
         if (signal.aborted) return
@@ -130,7 +116,7 @@ export const usePostsListStore = defineStore('postsList', {
 
         this.saveToStorage()
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        if (!isAbortError(error)) {
           console.error('Error fetching posts:', error)
         }
       } finally {
@@ -164,68 +150,7 @@ export const usePostsListStore = defineStore('postsList', {
     },
 
     async refreshPosts() {
-      invalidateLocalPostsCache()
       await this.fetchPosts({ resetPage: false })
-    },
-
-    /** Загружает только id постов на странице по skip (select=id); для навигации в модалке без полной загрузки. */
-    async fetchPostIdsAtSkip(skip: number): Promise<number[]> {
-      return getPostIds({
-        limit: this.limit,
-        skip,
-        query: this.query,
-        field: this.searchField,
-      })
-    },
-
-    /** Возвращает id предыдущего поста в выдаче; при переходе на пред. страницу не меняет state списка. */
-    async getPrevPostId(currentPostId: number): Promise<number | null> {
-      const ctx = this.postsForModal(currentPostId)
-      if (!ctx) return null
-      const { postIds, skip } = ctx
-      const index = postIds.indexOf(currentPostId)
-      if (index < 0) return null
-      if (index > 0) return postIds[index - 1] ?? null
-      if (skip <= 0) return null
-
-      const prevPageSkip = skip - this.limit
-      // Предыдущая страница уже в хранилище — не запрашиваем список id
-      if (prevPageSkip === this.skip && this.posts.length > 0) {
-        const last = this.posts[this.posts.length - 1]
-        return last?.id ?? null
-      }
-      if (prevPageSkip === this.modalPageSkip && this.modalPageIds.length > 0) {
-        return this.modalPageIds[this.modalPageIds.length - 1] ?? null
-      }
-      const prevPageIds = await this.fetchPostIdsAtSkip(prevPageSkip)
-      this.modalPageSkip = prevPageSkip
-      this.modalPageIds = prevPageIds
-      return prevPageIds[prevPageIds.length - 1] ?? null
-    },
-
-    /** Возвращает id следующего поста в выдаче; при переходе на след. страницу не меняет state списка. */
-    async getNextPostId(currentPostId: number): Promise<number | null> {
-      const ctx = this.postsForModal(currentPostId)
-      if (!ctx) return null
-      const { postIds, skip } = ctx
-      const index = postIds.indexOf(currentPostId)
-      if (index < 0) return null
-      if (index < postIds.length - 1) return postIds[index + 1] ?? null
-      if (skip + this.limit >= this.total) return null
-
-      const nextPageSkip = skip + this.limit
-      // Следующая страница уже в хранилище — не запрашиваем список id
-      if (nextPageSkip === this.skip && this.posts.length > 0) {
-        const first = this.posts[0]
-        return first?.id ?? null
-      }
-      if (nextPageSkip === this.modalPageSkip && this.modalPageIds.length > 0) {
-        return this.modalPageIds[0] ?? null
-      }
-      const nextPageIds = await this.fetchPostIdsAtSkip(nextPageSkip)
-      this.modalPageSkip = nextPageSkip
-      this.modalPageIds = nextPageIds
-      return nextPageIds[0] ?? null
     },
   },
 })

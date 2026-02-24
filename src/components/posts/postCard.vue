@@ -8,16 +8,11 @@ export default {
   props: {
     post: {
       type: Object as PropType<PostDto>,
-      default: null,
-    },
-    loading: {
-      type: Boolean,
-      default: false,
+      required: true,
     },
   },
   computed: {
     truncatedPostBody(): string {
-      if (!this.post) return ''
       const text = this.post.body ?? ''
       return text.length > 100 ? text.slice(0, 100) + '...' : text
     },
@@ -28,33 +23,27 @@ export default {
 <template>
   <v-card
     class="post-card"
-    :class="{ 'post-card-skeleton': loading }"
-    :title="loading ? undefined : post?.title"
-    :subtitle="loading ? undefined : post ? `ID автора: ${post.userId}` : undefined"
-    @click="!loading && $emit('open')"
+    :title="post.title"
+    :subtitle="`ID автора: ${post.userId}`"
+    @click="$emit('open')"
   >
-    <template v-if="loading">
-      <v-skeleton-loader type="article" class="skeleton-article" />
-    </template>
-    <template v-else-if="post">
-      <v-card-text>
-        {{ truncatedPostBody }}
-      </v-card-text>
-      <div class="meta">
-        <span class="meta-item">
-          <v-icon icon="mdi-thumb-up-outline" size="18" />
-          {{ post.reactions.likes }}
-        </span>
-        <span class="meta-item">
-          <v-icon icon="mdi-thumb-down-outline" size="18" />
-          {{ post.reactions.dislikes }}
-        </span>
-        <span class="meta-item">
-          <v-icon icon="mdi-eye-outline" size="18" />
-          {{ post.views }}
-        </span>
-      </div>
-    </template>
+    <v-card-text>
+      {{ truncatedPostBody }}
+    </v-card-text>
+    <div class="meta">
+      <span class="meta-item">
+        <v-icon icon="mdi-thumb-up-outline" size="18" />
+        {{ post.reactions.likes }}
+      </span>
+      <span class="meta-item">
+        <v-icon icon="mdi-thumb-down-outline" size="18" />
+        {{ post.reactions.dislikes }}
+      </span>
+      <span class="meta-item">
+        <v-icon icon="mdi-eye-outline" size="18" />
+        {{ post.views }}
+      </span>
+    </div>
   </v-card>
 </template>
 
@@ -92,20 +81,5 @@ export default {
 .post-card:hover {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.18);
-}
-
-.post-card-skeleton {
-  cursor: default;
-}
-
-.post-card-skeleton:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.skeleton-article {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 15px;
 }
 </style>

@@ -1,7 +1,9 @@
 <script lang="ts">
 import { mapStores } from 'pinia'
 import { usePostDetailsStore } from '@/stores/postDetailsStore'
-import { usePostsListStore } from '@/stores/postsListStore'
+import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
+
+let coordinator: ReturnType<typeof usePostsCoordinator> | null = null
 
 export default {
   name: 'PostDetailsModal',
@@ -10,15 +12,11 @@ export default {
       type: Boolean,
       required: true,
     },
-    postId: {
-      type: Number as () => number | null,
-      default: null,
-    },
   },
-  emits: ['update:modelValue', 'navigate'],
+  emits: ['update:modelValue'],
 
   computed: {
-    ...mapStores(usePostDetailsStore, usePostsListStore),
+    ...mapStores(usePostDetailsStore),
     isOpen: {
       get(): boolean {
         return this.modelValue
@@ -39,40 +37,18 @@ export default {
       const parts = [u.firstName, u.lastName].filter(Boolean).join(' ')
       return parts.trim() || '—'
     },
-    /** Страница выдачи (таблица или модалка), в которой находится текущий пост; null, если пост нигде не найден. */
-    modalContext(): { postIds: number[]; skip: number } | null {
-      if (this.postId == null) return null
-      return this.postsListStore.postsForModal(this.postId)
-    },
-    currentPostIndex(): number {
-      const ctx = this.modalContext
-      if (!ctx || this.postId == null) return -1
-      return ctx.postIds.indexOf(this.postId)
-    },
     hasPrevPost(): boolean {
-      const ctx = this.modalContext
-      if (!ctx || this.postId == null) return false
-      const index = ctx.postIds.indexOf(this.postId)
-      if (index < 0) return false
-      return index > 0 || ctx.skip > 0
+      return coordinator?.hasPrevPost.value ?? false
     },
     hasNextPost(): boolean {
-      const ctx = this.modalContext
-      if (!ctx || this.postId == null) return false
-      const index = ctx.postIds.indexOf(this.postId)
-      if (index < 0) return false
-      const { postIds, skip } = ctx
-      const { total } = this.postsListStore
-      return index < postIds.length - 1 || skip + postIds.length < total
+      return coordinator?.hasNextPost.value ?? false
     },
     showSaveButton(): boolean {
       return this.isEditing && this.postDetailsStore.hasUnsavedChanges
     },
-    /** Показывать скелетон: идёт загрузка или открыт другой пост, чем загруженный. */
+    /** Показывать скелетон: идёт загрузка или пост ещё не загружен. */
     showModalSkeleton(): boolean {
-      if (this.postDetailsStore.modalPostLoading) return true
-      if (this.postId == null) return false
-      return !this.post || this.post.id !== this.postId
+      return this.postDetailsStore.modalPostLoading || !this.post
     },
   },
 
@@ -83,18 +59,11 @@ export default {
     }
   },
 
+  created() {
+    coordinator = usePostsCoordinator()
+  },
+
   watch: {
-    isOpen(open: boolean) {
-      if (open && this.postId != null) {
-        this.postDetailsStore.fetchPostById(this.postId)
-      }
-    },
-    postId(newPostId: number | null) {
-      this.isEditing = false
-      if (this.isOpen && newPostId != null) {
-        this.postDetailsStore.fetchPostById(newPostId)
-      }
-    },
     post: {
       handler() {
         this.postDetailsStore.snapshotOriginal()
@@ -116,26 +85,25 @@ export default {
       this.isEditing = true
     },
     async saveChanges() {
-      if (this.postId == null) return
-      const saved = await this.postDetailsStore.saveChanges(this.postId)
+      const postId = this.postDetailsStore.modalRequestedPostId
+      if (postId == null) return
+      const saved = await coordinator!.saveAndSync(postId)
       if (saved) this.isEditing = false
     },
     async goToPrevPost() {
-      if (!this.hasPrevPost || this.isNavigating || this.postId == null) return
+      if (!this.hasPrevPost || this.isNavigating || this.isEditing) return
       this.isNavigating = true
       try {
-        const id = await this.postsListStore.getPrevPostId(this.postId)
-        if (id != null) this.$emit('navigate', id)
+        await coordinator!.goToPrevPost()
       } finally {
         this.isNavigating = false
       }
     },
     async goToNextPost() {
-      if (!this.hasNextPost || this.isNavigating || this.postId == null) return
+      if (!this.hasNextPost || this.isNavigating || this.isEditing) return
       this.isNavigating = true
       try {
-        const id = await this.postsListStore.getNextPostId(this.postId)
-        if (id != null) this.$emit('navigate', id)
+        await coordinator!.goToNextPost()
       } finally {
         this.isNavigating = false
       }
@@ -161,7 +129,11 @@ export default {
         <div class="modal-card-header">
           <template v-if="showModalSkeleton || !post">
             <v-card-title v-if="!showModalSkeleton" class="modal-title-text">
-              {{ postId != null ? `Пост #${postId}` : 'Пост' }}
+              {{
+                postDetailsStore.modalRequestedPostId != null
+                  ? `Пост #${postDetailsStore.modalRequestedPostId}`
+                  : 'Пост'
+              }}
             </v-card-title>
             <v-skeleton-loader
               v-else

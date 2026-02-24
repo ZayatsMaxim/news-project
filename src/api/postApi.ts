@@ -18,6 +18,8 @@ export interface GetPostsParams {
   query?: string
   field?: PostSearchField
   signal?: AbortSignal
+  /** Поля ответа (например: id,title,userId,body,reactions). Без указания используется postsSelect. */
+  select?: string
 }
 
 type PostListRoute =
@@ -83,7 +85,8 @@ async function fetchPostsJson(
 }
 
 export async function getPosts(params: GetPostsParams): Promise<PostResponseDto> {
-  const { limit, skip, query = '', field = 'title', signal } = params
+  const { limit, skip, query = '', field = 'title', signal, select } = params
+  const effectiveSelect = select ?? POSTS_SELECT
   const route = resolvePostListRoute(query.trim(), field, limit, skip)
 
   switch (route.kind) {
@@ -92,7 +95,7 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
     case 'empty':
       return emptyResponse(limit)
     case 'remote':
-      return fetchPostsJson(withSelectParam(route.url, POSTS_SELECT), signal, limit)
+      return fetchPostsJson(withSelectParam(route.url, effectiveSelect), signal, limit)
   }
 }
 

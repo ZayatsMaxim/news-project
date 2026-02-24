@@ -3,7 +3,10 @@ import { mapStores } from 'pinia'
 import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsListStore } from '@/stores/postsListStore'
+import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
 import type { PostDto } from '@/dto/post/postDto'
+
+let coordinator: ReturnType<typeof usePostsCoordinator> | null = null
 
 export default {
   name: 'PostsTable',
@@ -21,13 +24,16 @@ export default {
       searchTimer: null as ReturnType<typeof setTimeout> | null,
       isHydrating: true,
       isPostModalOpen: false,
-      selectedPostId: null as number | null,
       searchFieldOptions: [
         { title: 'Заголовок', value: 'title' },
         { title: 'Текст', value: 'body' },
         { title: 'ID автора', value: 'userId' },
       ],
     }
+  },
+
+  created() {
+    coordinator = usePostsCoordinator()
   },
 
   async mounted() {
@@ -47,7 +53,7 @@ export default {
       const query = this.postsListStore.query
       const field = this.postsListStore.searchField
       this.searchTimer = setTimeout(() => {
-        this.postsListStore.searchPosts(query, field)
+        coordinator!.searchPosts(query, field)
       }, 400)
     },
     'postsListStore.searchField'() {
@@ -56,17 +62,14 @@ export default {
         clearTimeout(this.searchTimer)
         this.searchTimer = null
       }
-      this.postsListStore.searchPosts(this.postsListStore.query, this.postsListStore.searchField)
+      coordinator!.searchPosts(this.postsListStore.query, this.postsListStore.searchField)
     },
   },
 
   methods: {
-    openPostModal(postId: number) {
-      this.selectedPostId = postId
+    openPostModal(postId: number, index: number) {
+      coordinator!.openPostForModal(postId, index)
       this.isPostModalOpen = true
-    },
-    navigateModalPost(postId: number) {
-      this.selectedPostId = postId
     },
 
     async onPageChange(page: number) {
@@ -78,15 +81,15 @@ export default {
     },
 
     async onRefresh() {
-      await this.postsListStore.refreshPosts()
+      await coordinator!.refreshPosts()
     },
   },
 }
 </script>
 
 <template>
-  <div>
-    <v-container>
+  <div class="page-layout">
+    <v-container class="toolbar">
       <v-row class="filters-row" align="center">
         <v-col cols="12" sm="4" md="3" lg="2">
           <v-select
@@ -126,26 +129,24 @@ export default {
       </v-row>
 
       <v-label>Найдено {{ postsListStore.total }} постов</v-label>
+    </v-container>
 
-      <v-row class="cards-row">
-        <template v-if="postsListStore.isLoading">
-          <v-col v-for="n in postsListStore.limit" :key="'skeleton-' + n" cols="12" sm="6" md="4">
-            <PostCard :loading="true" />
+    <div class="content-area">
+      <v-container v-if="postsListStore.isLoading" class="loader-wrap">
+        <v-progress-circular indeterminate size="48" />
+      </v-container>
+      <v-container v-else>
+        <v-row class="cards-row">
+          <v-col v-for="(post, index) in posts" :key="post.id" cols="12" sm="6" md="4">
+            <PostCard :post="post" @open="openPostModal(post.id, index)" />
           </v-col>
-        </template>
-        <template v-else>
-          <v-col v-for="post in posts" :key="post.id" cols="12" sm="6" md="4">
-            <PostCard :post="post" @open="openPostModal(post.id)" />
-          </v-col>
-        </template>
-      </v-row>
+        </v-row>
+      </v-container>
+    </div>
 
-      <PostDetailsModal
-        v-model="isPostModalOpen"
-        :post-id="selectedPostId"
-        @navigate="navigateModalPost"
-      />
+    <PostDetailsModal v-model="isPostModalOpen" />
 
+    <v-container class="footer">
       <v-pagination
         :length="postsListStore.pagesAmount"
         :total-visible="5"
@@ -157,8 +158,37 @@ export default {
 </template>
 
 <style scoped>
+.page-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  flex-shrink: 0;
+}
+
 .filters-row {
   row-gap: 8px;
+}
+
+.content-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.loader-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+}
+
+.footer {
+  flex-shrink: 0;
 }
 
 .cards-row :deep(.v-col) {
