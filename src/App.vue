@@ -1,11 +1,5 @@
-<script lang="ts">
+<script setup lang="ts">
 import PostsTable from '@/components/posts/postsTable.vue'
-
-export default {
-  components: {
-    PostsTable,
-  },
-}
 </script>
 
 <template>

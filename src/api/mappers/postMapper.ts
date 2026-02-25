@@ -21,7 +21,7 @@ function normalizeReactions(raw: RawPostDto['reactions']): PostReactionsDto {
 
 /**
  * Нормализует сырой объект поста из API в PostDto.
- * Поддерживает ответ списка (без tags) и ответ одного поста (GET /posts/:id с полем tags).
+ * Поддерживает ответ для списка постов (без tags) и ответ для одного поста (GET /posts/:id с полем tags).
  */
 export function normalizePost(raw: unknown): PostDto {
   const post = (typeof raw === 'object' && raw !== null ? raw : {}) as RawPostDto

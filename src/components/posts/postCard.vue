@@ -1,23 +1,14 @@
-<script lang="ts">
+<script setup lang="ts">
+import { computed } from 'vue'
 import type { PostDto } from '@/dto/post/postDto'
-import type { PropType } from 'vue'
 
-export default {
-  name: 'PostCard',
-  emits: ['open'],
-  props: {
-    post: {
-      type: Object as PropType<PostDto>,
-      required: true,
-    },
-  },
-  computed: {
-    truncatedPostBody(): string {
-      const text = this.post.body ?? ''
-      return text.length > 100 ? text.slice(0, 100) + '...' : text
-    },
-  },
-}
+const props = defineProps<{ post: PostDto }>()
+const emit = defineEmits<{ (e: 'open'): void }>()
+
+const truncatedPostBody = computed(() => {
+  const text = props.post.body ?? ''
+  return text.length > 100 ? text.slice(0, 100) + '...' : text
+})
 </script>
 
 <template>
@@ -25,7 +16,7 @@ export default {
     class="post-card"
     :title="post.title"
     :subtitle="`ID автора: ${post.userId}`"
-    @click="$emit('open')"
+    @click="emit('open')"
   >
     <v-card-text>
       {{ truncatedPostBody }}

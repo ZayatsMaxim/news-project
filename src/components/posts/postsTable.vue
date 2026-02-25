@@ -1,89 +1,77 @@
-<script lang="ts">
-import { mapStores } from 'pinia'
+<script setup lang="ts">
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsListStore } from '@/stores/postsListStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
-import type { PostDto } from '@/dto/post/postDto'
 
-let coordinator: ReturnType<typeof usePostsCoordinator> | null = null
+const postsListStore = usePostsListStore()
+const coordinator = usePostsCoordinator()
 
-export default {
-  name: 'PostsTable',
-  components: { PostCard, PostDetailsModal },
+const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const isHydrating = ref(true)
+const isPostModalOpen = ref(false)
 
-  computed: {
-    ...mapStores(usePostsListStore),
-    posts(): PostDto[] {
-      return this.postsListStore.posts
-    },
+const searchFieldOptions = [
+  { title: 'Заголовок', value: 'title' },
+  { title: 'Текст', value: 'body' },
+  { title: 'ID автора', value: 'userId' },
+] as const
+
+const posts = computed(() => postsListStore.posts)
+
+watch(
+  () => postsListStore.query,
+  () => {
+    if (isHydrating.value) return
+    if (searchTimer.value) clearTimeout(searchTimer.value)
+    const query = postsListStore.query
+    const field = postsListStore.searchField
+    searchTimer.value = setTimeout(() => {
+      coordinator.searchPosts(query, field)
+    }, 400)
   },
+  { flush: 'post' },
+)
 
-  data() {
-    return {
-      searchTimer: null as ReturnType<typeof setTimeout> | null,
-      isHydrating: true,
-      isPostModalOpen: false,
-      searchFieldOptions: [
-        { title: 'Заголовок', value: 'title' },
-        { title: 'Текст', value: 'body' },
-        { title: 'ID автора', value: 'userId' },
-      ],
+watch(
+  () => postsListStore.searchField,
+  () => {
+    if (isHydrating.value) return
+    if (searchTimer.value) {
+      clearTimeout(searchTimer.value)
+      searchTimer.value = null
     }
+    coordinator.searchPosts(postsListStore.query, postsListStore.searchField)
   },
+  { flush: 'post' },
+)
 
-  created() {
-    coordinator = usePostsCoordinator()
-  },
+onMounted(async () => {
+  await postsListStore.ensurePostsLoaded()
+  await nextTick()
+  isHydrating.value = false
+})
 
-  async mounted() {
-    await this.postsListStore.ensurePostsLoaded()
-    await this.$nextTick()
-    this.isHydrating = false
-  },
+onBeforeUnmount(() => {
+  if (searchTimer.value) clearTimeout(searchTimer.value)
+})
 
-  beforeUnmount() {
-    if (this.searchTimer) clearTimeout(this.searchTimer)
-  },
+function openPostModal(postId: number, index: number) {
+  coordinator.openPostForModal(postId, index)
+  isPostModalOpen.value = true
+}
 
-  watch: {
-    'postsListStore.query'() {
-      if (this.isHydrating) return
-      if (this.searchTimer) clearTimeout(this.searchTimer)
-      const query = this.postsListStore.query
-      const field = this.postsListStore.searchField
-      this.searchTimer = setTimeout(() => {
-        coordinator!.searchPosts(query, field)
-      }, 400)
-    },
-    'postsListStore.searchField'() {
-      if (this.isHydrating) return
-      if (this.searchTimer) {
-        clearTimeout(this.searchTimer)
-        this.searchTimer = null
-      }
-      coordinator!.searchPosts(this.postsListStore.query, this.postsListStore.searchField)
-    },
-  },
+async function onPageChange(page: number) {
+  if (searchTimer.value) {
+    clearTimeout(searchTimer.value)
+    searchTimer.value = null
+  }
+  await postsListStore.loadPage(page)
+}
 
-  methods: {
-    openPostModal(postId: number, index: number) {
-      coordinator!.openPostForModal(postId, index)
-      this.isPostModalOpen = true
-    },
-
-    async onPageChange(page: number) {
-      if (this.searchTimer) {
-        clearTimeout(this.searchTimer)
-        this.searchTimer = null
-      }
-      await this.postsListStore.loadPage(page)
-    },
-
-    async onRefresh() {
-      await coordinator!.refreshPosts()
-    },
-  },
+async function onRefresh() {
+  await coordinator.refreshPosts()
 }
 </script>
 

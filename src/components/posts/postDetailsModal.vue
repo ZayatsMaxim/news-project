@@ -1,114 +1,84 @@
-<script lang="ts">
-import { mapStores } from 'pinia'
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { usePostDetailsStore } from '@/stores/postDetailsStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
 
-let coordinator: ReturnType<typeof usePostsCoordinator> | null = null
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 
-export default {
-  name: 'PostDetailsModal',
-  props: {
-    modelValue: {
-      type: Boolean,
-      required: true,
-    },
-  },
-  emits: ['update:modelValue'],
+const postDetailsStore = usePostDetailsStore()
+const coordinator = usePostsCoordinator()
 
-  computed: {
-    ...mapStores(usePostDetailsStore),
-    isOpen: {
-      get(): boolean {
-        return this.modelValue
-      },
-      set(value: boolean) {
-        this.$emit('update:modelValue', value)
-      },
-    },
-    post() {
-      return this.postDetailsStore.modalPost
-    },
-    user() {
-      return this.postDetailsStore.modalUser
-    },
-    authorLine(): string {
-      const u = this.user
-      if (!u) return ''
-      const parts = [u.firstName, u.lastName].filter(Boolean).join(' ')
-      return parts.trim() || '—'
-    },
-    hasPrevPost(): boolean {
-      return coordinator?.hasPrevPost.value ?? false
-    },
-    hasNextPost(): boolean {
-      return coordinator?.hasNextPost.value ?? false
-    },
-    showSaveButton(): boolean {
-      return this.isEditing && this.postDetailsStore.hasUnsavedChanges
-    },
-    /** Показывать скелетон: идёт загрузка или пост ещё не загружен. */
-    showModalSkeleton(): boolean {
-      return this.postDetailsStore.modalPostLoading || !this.post
-    },
-  },
+const isNavigating = ref(false)
+const isEditing = ref(false)
 
-  data() {
-    return {
-      isNavigating: false,
-      isEditing: false,
-    }
-  },
+const isOpen = computed({
+  get: () => props.modelValue,
+  set: (value: boolean) => emit('update:modelValue', value),
+})
 
-  created() {
-    coordinator = usePostsCoordinator()
-  },
+const post = computed(() => postDetailsStore.modalPost)
+const user = computed(() => postDetailsStore.modalUser)
 
-  watch: {
-    post: {
-      handler() {
-        this.postDetailsStore.snapshotOriginal()
-      },
-      immediate: true,
-    },
-  },
-  methods: {
-    onAfterLeave() {
-      this.postDetailsStore.revertEdits()
-      this.postDetailsStore.clearModalPost()
-      this.isEditing = false
-    },
-    resetEditState() {
-      this.postDetailsStore.revertEdits()
-      this.isEditing = false
-    },
-    startEdit() {
-      this.isEditing = true
-    },
-    async saveChanges() {
-      const postId = this.postDetailsStore.modalRequestedPostId
-      if (postId == null) return
-      const saved = await coordinator!.saveAndSync(postId)
-      if (saved) this.isEditing = false
-    },
-    async goToPrevPost() {
-      if (!this.hasPrevPost || this.isNavigating || this.isEditing) return
-      this.isNavigating = true
-      try {
-        await coordinator!.goToPrevPost()
-      } finally {
-        this.isNavigating = false
-      }
-    },
-    async goToNextPost() {
-      if (!this.hasNextPost || this.isNavigating || this.isEditing) return
-      this.isNavigating = true
-      try {
-        await coordinator!.goToNextPost()
-      } finally {
-        this.isNavigating = false
-      }
-    },
-  },
+const authorLine = computed(() => {
+  const u = user.value
+  if (!u) return ''
+  const parts = [u.firstName, u.lastName].filter(Boolean).join(' ')
+  return parts.trim() || '—'
+})
+
+const hasPrevPost = coordinator.hasPrevPost
+const hasNextPost = coordinator.hasNextPost
+
+const showSaveButton = computed(
+  () => isEditing.value && postDetailsStore.hasUnsavedChanges,
+)
+const showModalSkeleton = computed(
+  () => postDetailsStore.modalPostLoading || !post.value,
+)
+
+watch(post, () => postDetailsStore.snapshotOriginal(), { immediate: true })
+
+function onAfterLeave() {
+  postDetailsStore.revertEdits()
+  postDetailsStore.clearModalPost()
+  isEditing.value = false
+}
+
+function resetEditState() {
+  postDetailsStore.revertEdits()
+  isEditing.value = false
+}
+
+function startEdit() {
+  isEditing.value = true
+}
+
+async function saveChanges() {
+  const postId = postDetailsStore.modalRequestedPostId
+  if (postId == null) return
+  const saved = await coordinator.saveAndSync(postId)
+  if (saved) isEditing.value = false
+}
+
+async function goToPrevPost() {
+  if (!hasPrevPost.value || isNavigating.value || isEditing.value) return
+  isNavigating.value = true
+  try {
+    await coordinator.goToPrevPost()
+  } finally {
+    isNavigating.value = false
+  }
+}
+
+async function goToNextPost() {
+  if (!hasNextPost.value || isNavigating.value || isEditing.value) return
+  isNavigating.value = true
+  try {
+    await coordinator.goToNextPost()
+  } finally {
+    isNavigating.value = false
+  }
 }
 </script>
 

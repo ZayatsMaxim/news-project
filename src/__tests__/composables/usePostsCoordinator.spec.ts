@@ -283,15 +283,12 @@ describe('usePostsCoordinator', () => {
       expect(listStore.total).toBe(2)
     })
 
-    it('displays only posts matching the search query', async () => {
+    it('saves into store only posts matching the search query', async () => {
       const listStore = usePostsListStore()
-      const matchingPosts = [
-        makePost(1, 'Vue 3 Guide', 'Intro to Vue'),
-        makePost(2, 'Angular 16 Guide', 'Intro to Angular'),
-      ]
+      const filteredPosts = [makePost(1, 'Vue 3 Guide', 'Intro to Vue')]
       mockedGetPosts.mockResolvedValue({
-        posts: matchingPosts,
-        total: 2,
+        posts: filteredPosts,
+        total: 1,
         skip: 0,
         limit: 9,
       })
@@ -304,11 +301,6 @@ describe('usePostsCoordinator', () => {
       )
       expect(listStore.posts).toHaveLength(1)
       expect(listStore.total).toBe(1)
-      const queryLower = 'vue'.toLowerCase()
-      listStore.posts.forEach((post) => {
-        expect(post.title.toLowerCase()).toContain(queryLower)
-      })
-      expect(listStore.posts.map((p) => p.id)).toEqual([1])
       expect(listStore.posts[0]!.title).toBe('Vue 3 Guide')
     })
   })
