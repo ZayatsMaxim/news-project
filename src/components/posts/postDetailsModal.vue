@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, inject } from 'vue'
 import { usePostDetailsStore } from '@/stores/postDetailsStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
+import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { isAbortError } from '@/utils/error'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 
 const postDetailsStore = usePostDetailsStore()
 const coordinator = usePostsCoordinator()
+const errorSnackbar = inject<ReturnType<typeof useErrorSnackbar>>('errorSnackbar')!
 
 const isNavigating = ref(false)
 const isEditing = ref(false)
@@ -30,12 +33,8 @@ const authorLine = computed(() => {
 const hasPrevPost = coordinator.hasPrevPost
 const hasNextPost = coordinator.hasNextPost
 
-const showSaveButton = computed(
-  () => isEditing.value && postDetailsStore.hasUnsavedChanges,
-)
-const showModalSkeleton = computed(
-  () => postDetailsStore.modalPostLoading || !post.value,
-)
+const showSaveButton = computed(() => isEditing.value && postDetailsStore.hasUnsavedChanges)
+const showModalSkeleton = computed(() => postDetailsStore.modalPostLoading || !post.value)
 
 watch(post, () => postDetailsStore.snapshotOriginal(), { immediate: true })
 
@@ -57,8 +56,12 @@ function startEdit() {
 async function saveChanges() {
   const postId = postDetailsStore.modalRequestedPostId
   if (postId == null) return
-  const saved = await coordinator.saveAndSync(postId)
-  if (saved) isEditing.value = false
+  try {
+    const saved = await coordinator.saveAndSync(postId)
+    if (saved) isEditing.value = false
+  } catch (e) {
+    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка сохранения изменений')
+  }
 }
 
 async function goToPrevPost() {
@@ -66,6 +69,8 @@ async function goToPrevPost() {
   isNavigating.value = true
   try {
     await coordinator.goToPrevPost()
+  } catch (e) {
+    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка загрузки поста')
   } finally {
     isNavigating.value = false
   }
@@ -76,6 +81,8 @@ async function goToNextPost() {
   isNavigating.value = true
   try {
     await coordinator.goToNextPost()
+  } catch (e) {
+    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка загрузки поста')
   } finally {
     isNavigating.value = false
   }
@@ -114,7 +121,7 @@ async function goToNextPost() {
           <template v-else>
             <v-text-field
               v-model="post.title"
-              :variant="isEditing ? 'outlined' : 'plain'"
+              :variant="isEditing ? 'underlined' : 'plain'"
               density="compact"
               hide-details
               class="modal-title-text modal-title-edit"
@@ -168,7 +175,7 @@ async function goToNextPost() {
           <v-card-text class="pt-0">
             <v-textarea
               v-model="post.body"
-              :variant="isEditing ? 'outlined' : 'plain'"
+              :variant="isEditing ? 'underlined' : 'plain'"
               hide-details
               rows="6"
               class="modal-body-edit"
@@ -204,6 +211,10 @@ async function goToNextPost() {
             >
               <div class="comment-username">{{ comment.user.username }}</div>
               <div class="comment-body">{{ comment.body }}</div>
+              <span class="comment-likes">
+                <v-icon icon="mdi-thumb-up-outline" size="16" />
+                {{ comment.likes }}
+              </span>
             </div>
           </v-card-text>
         </template>
@@ -357,6 +368,14 @@ async function goToNextPost() {
 }
 .comment-body {
   font-size: 0.875rem;
+}
+.comment-likes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-top: 4px;
 }
 
 .modal-skeleton-title {

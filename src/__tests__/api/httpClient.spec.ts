@@ -92,6 +92,18 @@ describe('fetchJson', () => {
     await expect(fetchJson('https://api.test/missing')).rejects.toThrow('Failed to fetch: 404')
   })
 
+  it('throws Error with status property when response is not ok', async () => {
+    globalThis.fetch = mockFetch(null, 404, false)
+    let caught: unknown
+    try {
+      await fetchJson('https://api.test/missing')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error & { status?: number }).status).toBe(404)
+  })
+
   it('throws when response is 500', async () => {
     globalThis.fetch = mockFetch(null, 500, false)
 
@@ -156,6 +168,18 @@ describe('fetchPatchJson', () => {
     await expect(
       fetchPatchJson('https://api.test/items/1', { title: 'X' }),
     ).rejects.toThrow('Failed to fetch: 403')
+  })
+
+  it('throws Error with status property when PATCH response is not ok', async () => {
+    globalThis.fetch = mockFetch(null, 403, false)
+    let caught: unknown
+    try {
+      await fetchPatchJson('https://api.test/items/1', { title: 'X' })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error & { status?: number }).status).toBe(403)
   })
 
   it('serializes body as JSON', async () => {

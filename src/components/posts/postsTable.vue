@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
 import PostCard from './postCard.vue'
 import PostDetailsModal from './postDetailsModal.vue'
 import { usePostsListStore } from '@/stores/postsListStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
+import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { isAbortError } from '@/utils/error'
 
 const postsListStore = usePostsListStore()
 const coordinator = usePostsCoordinator()
+const { snackbarVisible, snackbarMessage, showSnackbar, closeSnackbar } = useErrorSnackbar()
+provide('errorSnackbar', { showSnackbar, closeSnackbar })
 
 const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const isHydrating = ref(true)
@@ -27,8 +31,12 @@ watch(
     if (searchTimer.value) clearTimeout(searchTimer.value)
     const query = postsListStore.query
     const field = postsListStore.searchField
-    searchTimer.value = setTimeout(() => {
-      coordinator.searchPosts(query, field)
+    searchTimer.value = setTimeout(async () => {
+      try {
+        await coordinator.searchPosts(query, field)
+      } catch (e) {
+        if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+      }
     }, 400)
   },
   { flush: 'post' },
@@ -42,13 +50,23 @@ watch(
       clearTimeout(searchTimer.value)
       searchTimer.value = null
     }
-    coordinator.searchPosts(postsListStore.query, postsListStore.searchField)
+    ;(async () => {
+      try {
+        await coordinator.searchPosts(postsListStore.query, postsListStore.searchField)
+      } catch (e) {
+        if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+      }
+    })()
   },
   { flush: 'post' },
 )
 
 onMounted(async () => {
-  await postsListStore.ensurePostsLoaded()
+  try {
+    await postsListStore.ensurePostsLoaded()
+  } catch (e) {
+    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+  }
   await nextTick()
   isHydrating.value = false
 })
@@ -57,9 +75,13 @@ onBeforeUnmount(() => {
   if (searchTimer.value) clearTimeout(searchTimer.value)
 })
 
-function openPostModal(postId: number, index: number) {
-  coordinator.openPostForModal(postId, index)
+async function openPostModal(postId: number, index: number) {
   isPostModalOpen.value = true
+  try {
+    await coordinator.openPostForModal(postId, index)
+  } catch (e) {
+        if (!isAbortError(e)) showSnackbar('Ошибка загрузки поста')
+  }
 }
 
 async function onPageChange(page: number) {
@@ -67,11 +89,19 @@ async function onPageChange(page: number) {
     clearTimeout(searchTimer.value)
     searchTimer.value = null
   }
-  await postsListStore.loadPage(page)
+  try {
+    await postsListStore.loadPage(page)
+  } catch (e) {
+    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+  }
 }
 
 async function onRefresh() {
-  await coordinator.refreshPosts()
+  try {
+    await coordinator.refreshPosts()
+  } catch (e) {
+    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+  }
 }
 </script>
 
@@ -133,6 +163,18 @@ async function onRefresh() {
     </div>
 
     <PostDetailsModal v-model="isPostModalOpen" />
+
+    <v-snackbar
+      v-model="snackbarVisible"
+      :text="snackbarMessage"
+      color="error"
+      location="bottom"
+      @update:model-value="(v: boolean) => !v && closeSnackbar()"
+    >
+      <template #actions>
+        <v-btn variant="text" @click="closeSnackbar">Закрыть</v-btn>
+      </template>
+    </v-snackbar>
 
     <v-container class="footer">
       <v-pagination

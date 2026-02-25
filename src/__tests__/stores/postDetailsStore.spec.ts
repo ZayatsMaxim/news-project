@@ -326,15 +326,14 @@ describe('postDetailsStore', () => {
       consoleSpy.mockRestore()
     })
 
-    it('logs non-AbortError when getPostById throws', async () => {
+    it('rethrows when getPostById throws', async () => {
       const store = usePostDetailsStore()
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockedGetPostById.mockRejectedValue(new Error('Network error'))
 
-      await store.loadPostForModal(0, 1)
-
-      expect(consoleSpy).toHaveBeenCalledWith('Error fetching post:', expect.any(Error))
+      await expect(store.loadPostForModal(0, 1)).rejects.toThrow('Network error')
       expect(store.modalPostLoading).toBe(false)
+      expect(consoleSpy).toHaveBeenCalledWith('Error fetching post:', expect.any(Error))
       consoleSpy.mockRestore()
     })
 
@@ -476,9 +475,7 @@ describe('postDetailsStore', () => {
       store.originalBody = 'Body'
       mockedPatchPost.mockRejectedValue(new Error('Patch failed'))
 
-      const result = await store.saveChanges(1)
-
-      expect(result).toBeNull()
+      await expect(store.saveChanges(1)).rejects.toThrow('Patch failed')
       expect(store.originalTitle).toBe('Title')
       expect(store.originalBody).toBe('Body')
       consoleSpy.mockRestore()
@@ -499,14 +496,12 @@ describe('postDetailsStore', () => {
       expect(store.postDetailsCache[0]!.post.title).toBe('Updated')
     })
 
-    it('returns null on error', async () => {
+    it('rethrows on error', async () => {
       const store = usePostDetailsStore()
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockedPatchPost.mockRejectedValue(new Error('Patch failed'))
 
-      const result = await store.updateModalPost(1, { title: 'X' })
-
-      expect(result).toBeNull()
+      await expect(store.updateModalPost(1, { title: 'X' })).rejects.toThrow('Patch failed')
       expect(consoleSpy).toHaveBeenCalledWith('Error updating post:', expect.any(Error))
       consoleSpy.mockRestore()
     })

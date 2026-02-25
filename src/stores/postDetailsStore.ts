@@ -111,9 +111,10 @@ export const usePostDetailsStore = defineStore('postDetails', {
       this.modalRequestedPostId = postId ?? null
       this.modalPostLoading = true
 
-      const cached = postId != null
-        ? this.postDetailsCache.find((c) => c.post.id === postId)
-        : this.postDetailsCache.find((c) => c.skip === skip)
+      const cached =
+        postId != null
+          ? this.postDetailsCache.find((c) => c.post.id === postId)
+          : this.postDetailsCache.find((c) => c.skip === skip)
 
       if (cached) {
         if (postId != null && this.modalRequestedPostId !== postId) return
@@ -141,6 +142,7 @@ export const usePostDetailsStore = defineStore('postDetails', {
             query: searchContext?.query ?? '',
             field: searchContext?.field ?? 'title',
             signal,
+            select: 'id,title,body,userId,tags,views,reactions,tags',
           })
           if (signal.aborted) return
           post = data.posts[0]
@@ -177,6 +179,7 @@ export const usePostDetailsStore = defineStore('postDetails', {
         if (!isAbortError(e)) {
           console.error('Error fetching post:', e)
         }
+        throw e
       } finally {
         if (postId != null) {
           if (this.modalRequestedPostId === postId) this.modalPostLoading = false
@@ -228,7 +231,7 @@ export const usePostDetailsStore = defineStore('postDetails', {
         if (!isAbortError(e)) {
           console.error('Error updating post:', e)
         }
-        return null
+        throw e
       }
     },
   },

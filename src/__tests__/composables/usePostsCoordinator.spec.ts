@@ -135,6 +135,17 @@ describe('usePostsCoordinator', () => {
 
       expect(loadSpy).toHaveBeenCalledWith(11, 42, { query: 'vue', field: 'title' })
     })
+
+    it('returns promise that rejects when loadPostForModal throws', async () => {
+      const listStore = usePostsListStore()
+      const detailsStore = usePostDetailsStore()
+      listStore.skip = 0
+      vi.spyOn(detailsStore, 'loadPostForModal').mockRejectedValue(new Error('Load failed'))
+
+      const { openPostForModal } = usePostsCoordinator()
+
+      await expect(openPostForModal(1, 0)).rejects.toThrow('Load failed')
+    })
   })
 
   describe('searchPosts', () => {
@@ -254,6 +265,14 @@ describe('usePostsCoordinator', () => {
       expect(callArg.field).toBe('userId')
     })
 
+    it('rethrows when listStore.searchPosts throws', async () => {
+      mockedGetPosts.mockRejectedValue(new Error('API error'))
+
+      const { searchPosts } = usePostsCoordinator()
+
+      await expect(searchPosts('test', 'title')).rejects.toThrow('API error')
+    })
+
     it('resets page to 1 on new search', async () => {
       const listStore = usePostsListStore()
       listStore.page = 3
@@ -347,6 +366,18 @@ describe('usePostsCoordinator', () => {
       const result = await saveAndSync(999)
 
       expect(result).toBe(false)
+    })
+
+    it('rethrows when detailsStore.saveChanges throws', async () => {
+      const detailsStore = usePostDetailsStore()
+      const post = makePost(1)
+      detailsStore.postDetailsCache = [{ post, user: null, comments: [] }]
+      detailsStore.modalRequestedPostId = 1
+      mockedPatchPost.mockRejectedValue(new Error('Patch failed'))
+
+      const { saveAndSync } = usePostsCoordinator()
+
+      await expect(saveAndSync(1)).rejects.toThrow('Patch failed')
     })
   })
 

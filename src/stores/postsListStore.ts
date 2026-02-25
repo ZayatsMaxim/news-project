@@ -4,7 +4,7 @@ import { normalizePostList } from '@/api/mappers/postMapper'
 import { apiConfig } from '@/config/api'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
-import { isAbortError } from '@/utils/error'
+import { isAbortError, getHttpStatus } from '@/utils/error'
 import { toFiniteNumber } from '@/utils/number'
 
 const STORAGE_KEY = 'posts_list_store_state'
@@ -116,8 +116,16 @@ export const usePostsListStore = defineStore('postsList', {
 
         this.saveToStorage()
       } catch (error) {
-        if (!isAbortError(error)) {
-          console.error('Error fetching posts:', error)
+        if (isAbortError(error)) {
+          // do nothing
+        } else if (getHttpStatus(error) === 404 && this.searchField === 'userId') {
+          this.posts = []
+          this.total = 0
+          this.skip = 0
+          this.page = 1
+          this.saveToStorage()
+        } else {
+          throw error
         }
       } finally {
         this.isLoading = false

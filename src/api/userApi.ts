@@ -30,6 +30,9 @@ function normalizeUser(raw: RawUser): UserDto {
 
 /** Получить пользователя по id (GET /users/:userId) */
 export async function getUser(userId: number, signal?: AbortSignal): Promise<UserDto> {
-  const raw = await fetchJson<RawUser>(`${USERS_BASE_URL}/${userId}`, { signal })
+  const raw = await fetchJson<RawUser>(`${USERS_BASE_URL}/${userId}`, {
+    signal,
+    params: { select: 'firstName,lastName,company' },
+  })
   return normalizeUser(raw)
 }

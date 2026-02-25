@@ -17,7 +17,7 @@ export function usePostsCoordinator() {
 
   function openPostForModal(postId: number, index: number) {
     const skip = listStore.skip + index
-    detailsStore.loadPostForModal(skip, postId, {
+    return detailsStore.loadPostForModal(skip, postId, {
       query: listStore.query,
       field: listStore.searchField,
     })

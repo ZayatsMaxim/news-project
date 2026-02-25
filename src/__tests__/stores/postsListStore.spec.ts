@@ -204,16 +204,40 @@ describe('postsListStore', () => {
       expect(store.total).toBe(1)
     })
 
-    it('handles fetch errors gracefully', async () => {
+    it('handles fetch errors by rethrowing', async () => {
       const store = usePostsListStore()
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockedGetPosts.mockRejectedValue(new Error('Network error'))
+      const networkError = new Error('Network error')
+      mockedGetPosts.mockRejectedValue(networkError)
+
+      await expect(store.fetchPosts()).rejects.toThrow('Network error')
+      expect(store.isLoading).toBe(false)
+    })
+
+    it('on 404 with searchField userId sets empty list and does not throw', async () => {
+      const store = usePostsListStore()
+      store.searchField = 'userId'
+      store.query = '999'
+      const err = new Error('Failed to fetch: 404') as Error & { status?: number }
+      err.status = 404
+      mockedGetPosts.mockRejectedValue(err)
 
       await store.fetchPosts()
 
-      expect(store.isLoading).toBe(false)
-      expect(consoleSpy).toHaveBeenCalledWith('Error fetching posts:', expect.any(Error))
-      consoleSpy.mockRestore()
+      expect(store.posts).toEqual([])
+      expect(store.total).toBe(0)
+      expect(store.skip).toBe(0)
+      expect(store.page).toBe(1)
+      expect(sessionStorageMock.setItem).toHaveBeenCalled()
+    })
+
+    it('on 404 with searchField title rethrows', async () => {
+      const store = usePostsListStore()
+      store.searchField = 'title'
+      const err = new Error('Failed to fetch: 404') as Error & { status?: number }
+      err.status = 404
+      mockedGetPosts.mockRejectedValue(err)
+
+      await expect(store.fetchPosts()).rejects.toThrow('Failed to fetch: 404')
     })
 
     it('does not log AbortError', async () => {

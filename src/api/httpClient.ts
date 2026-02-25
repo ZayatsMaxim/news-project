@@ -32,7 +32,9 @@ export async function fetchJson<T>(
   const finalUrl = buildUrl(url, params)
   const response = await fetch(finalUrl, { signal })
   if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.status}`)
+    const err = new Error(`Failed to fetch: ${response.status}`) as Error & { status?: number }
+    err.status = response.status
+    throw err
   }
   return (await response.json()) as T
 }
@@ -54,7 +56,9 @@ export async function fetchPatchJson<T>(
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.status}`)
+    const err = new Error(`Failed to fetch: ${response.status}`) as Error & { status?: number }
+    err.status = response.status
+    throw err
   }
   return (await response.json()) as T
 }
