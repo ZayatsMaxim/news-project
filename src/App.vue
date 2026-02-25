@@ -3,35 +3,30 @@ import PostsTable from '@/components/posts/postsTable.vue'
 </script>
 
 <template>
-  <div class="app-root">
-    <header class="app-header">
-      <h1>Посты</h1>
-      <h2>Список постов от пользователей</h2>
-    </header>
+  <div class="d-flex flex-column overflow-hidden" style="height: 100vh">
+    <v-container
+      ><header class="flex-shrink-0">
+        <div class="text-h4">Новости</div>
+        <div class="text-subtitle-2 text-medium-emphasis">Последние новости от пользователей</div>
+      </header>
+    </v-container>
 
-    <main class="app-main">
+    <main class="flex-fill min-height-0 d-flex flex-column">
       <PostsTable />
     </main>
   </div>
 </template>
 
 <style scoped>
-.app-root {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.app-header {
-  flex-shrink: 0;
-  padding: 16px 24px 0;
-}
-
-.app-main {
-  flex: 1 1 auto;
+.min-height-0 {
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+}
+
+.flex-fill {
+  flex: 1 1 auto;
+}
+
+.flex-shrink-0 {
+  flex-shrink: 0;
 }
 </style>

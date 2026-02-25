@@ -14,6 +14,10 @@ const errorSnackbar = inject<ReturnType<typeof useErrorSnackbar>>('errorSnackbar
 
 const isNavigating = ref(false)
 const isEditing = ref(false)
+const formRef = ref<{ validate: () => Promise<{ valid: boolean }>; resetValidation: () => void } | null>(null)
+
+const titleRules = [(v: string) => !!String(v ?? '').trim() || 'Заголовок не должен быть пустым']
+const bodyRules = [(v: string) => !!String(v ?? '').trim() || 'Текст не должен быть пустым']
 
 const isOpen = computed({
   get: () => props.modelValue,
@@ -34,17 +38,24 @@ const hasPrevPost = coordinator.hasPrevPost
 const hasNextPost = coordinator.hasNextPost
 
 const showSaveButton = computed(() => isEditing.value && postDetailsStore.hasUnsavedChanges)
+const isFormValid = computed(() => {
+  const p = post.value
+  if (!p) return false
+  return !!String(p.title ?? '').trim() && !!String(p.body ?? '').trim()
+})
 const showModalSkeleton = computed(() => postDetailsStore.modalPostLoading || !post.value)
 
 watch(post, () => postDetailsStore.snapshotOriginal(), { immediate: true })
 
 function onAfterLeave() {
+  formRef.value?.resetValidation()
   postDetailsStore.revertEdits()
   postDetailsStore.clearModalPost()
   isEditing.value = false
 }
 
 function resetEditState() {
+  formRef.value?.resetValidation()
   postDetailsStore.revertEdits()
   isEditing.value = false
 }
@@ -56,6 +67,13 @@ function startEdit() {
 async function saveChanges() {
   const postId = postDetailsStore.modalRequestedPostId
   if (postId == null) return
+  const { valid } = await formRef.value?.validate() ?? { valid: false }
+  if (!valid) return
+  const p = post.value
+  if (p) {
+    p.title = p.title?.trim() ?? ''
+    p.body = p.body?.trim() ?? ''
+  }
   try {
     const saved = await coordinator.saveAndSync(postId)
     if (saved) isEditing.value = false
@@ -103,9 +121,10 @@ async function goToNextPost() {
       </button>
 
       <v-card class="modal-card">
-        <div class="modal-card-header">
+        <v-form ref="formRef">
+        <div class="d-flex align-start ga-2 pa-4 pt-4">
           <template v-if="showModalSkeleton || !post">
-            <v-card-title v-if="!showModalSkeleton" class="modal-title-text">
+            <v-card-title v-if="!showModalSkeleton" class="flex-grow-1 min-width-0 pl-0">
               {{
                 postDetailsStore.modalRequestedPostId != null
                   ? `Пост #${postDetailsStore.modalRequestedPostId}`
@@ -115,7 +134,7 @@ async function goToNextPost() {
             <v-skeleton-loader
               v-else
               type="heading"
-              class="modal-title-text modal-skeleton-title"
+              class="flex-grow-1 min-width-0 modal-skeleton-title"
             />
           </template>
           <template v-else>
@@ -123,13 +142,14 @@ async function goToNextPost() {
               v-model="post.title"
               :variant="isEditing ? 'underlined' : 'plain'"
               density="compact"
-              hide-details
-              class="modal-title-text modal-title-edit"
+              hide-details="auto"
+              :rules="titleRules"
+              class="flex-grow-1 min-width-0 pt-0 modal-title-edit"
               placeholder="Заголовок"
               :readonly="!isEditing"
             />
           </template>
-          <div class="modal-header-actions">
+          <div class="d-flex align-center ga-1 flex-shrink-0">
             <v-btn
               v-if="post && !showModalSkeleton"
               :icon="isEditing ? 'mdi-undo' : 'mdi-pencil'"
@@ -146,6 +166,7 @@ async function goToNextPost() {
               variant="text"
               size="small"
               aria-label="Сохранить"
+              :disabled="!isFormValid"
               @click="saveChanges"
             />
           </div>
@@ -155,7 +176,7 @@ async function goToNextPost() {
           <v-card-text class="modal-skeleton-body">
             <v-skeleton-loader type="list-item-two-line" class="modal-skeleton-author" />
             <v-skeleton-loader type="paragraph" class="modal-skeleton-paragraph" />
-            <div class="meta modal-skeleton-meta">
+            <div class="meta modal-skeleton-meta ga-1">
               <v-skeleton-loader
                 v-for="i in 3"
                 :key="i"
@@ -167,51 +188,56 @@ async function goToNextPost() {
         </template>
 
         <template v-else-if="post">
-          <v-card-text v-if="user" class="author-block">
-            <div class="author-line">{{ authorLine }}</div>
-            <div v-if="user.jobTitle" class="author-meta">Должность: {{ user.jobTitle }}</div>
-            <div v-if="user.department" class="author-meta">Отдел: {{ user.department }}</div>
+          <v-card-text v-if="user" class="pb-0">
+            <div class="font-weight-bold mb-1">{{ authorLine }}</div>
+            <div v-if="user.jobTitle" class="text-body-2 text-medium-emphasis mt-1">
+              Должность: {{ user.jobTitle }}
+            </div>
+            <div v-if="user.department" class="text-body-2 text-medium-emphasis mt-1">
+              Отдел: {{ user.department }}
+            </div>
           </v-card-text>
           <v-card-text class="pt-0">
             <v-textarea
               v-model="post.body"
               :variant="isEditing ? 'underlined' : 'plain'"
-              hide-details
+              hide-details="auto"
+              :rules="bodyRules"
               rows="6"
-              class="modal-body-edit"
+              class="w-100"
               placeholder="Текст новости"
               :readonly="!isEditing"
             />
           </v-card-text>
-          <v-card-text v-if="post.tags?.length" class="pt-0 tags-wrap">
+          <v-card-text v-if="post.tags?.length" class="pt-0 d-flex flex-wrap ga-1">
             <v-chip v-for="tag in post.tags" :key="tag" size="small" variant="tonal">
               {{ tag }}
             </v-chip>
           </v-card-text>
-          <div class="meta">
-            <span class="meta-item">
+          <div class="d-flex ga-3 px-4 pb-4 text-body-2">
+            <span class="d-inline-flex align-center ga-1">
               <v-icon icon="mdi-thumb-up-outline" size="18" />
               {{ post.reactions.likes }}
             </span>
-            <span class="meta-item">
+            <span class="d-inline-flex align-center ga-1">
               <v-icon icon="mdi-thumb-down-outline" size="18" />
               {{ post.reactions.dislikes }}
             </span>
-            <span class="meta-item">
+            <span class="d-inline-flex align-center ga-1">
               <v-icon icon="mdi-eye-outline" size="18" />
               {{ post.views }}
             </span>
           </div>
-          <v-card-text v-if="postDetailsStore.modalComments.length" class="comments-block">
-            <div class="comments-title">Комментарии</div>
+          <v-card-text v-if="postDetailsStore.modalComments.length" class="comments-block pt-3">
+            <div class="font-weight-bold mb-2 text-body-1">Комментарии</div>
             <div
               v-for="comment in postDetailsStore.modalComments"
               :key="comment.id"
-              class="comment-item"
+              class="py-2 comment-item-border"
             >
-              <div class="comment-username">{{ comment.user.username }}</div>
-              <div class="comment-body">{{ comment.body }}</div>
-              <span class="comment-likes">
+              <div class="text-caption text-medium-emphasis mb-1">{{ comment.user.username }}</div>
+              <div class="text-body-2">{{ comment.body }}</div>
+              <span class="d-inline-flex align-center ga-1 text-caption text-medium-emphasis mt-1">
                 <v-icon icon="mdi-thumb-up-outline" size="16" />
                 {{ comment.likes }}
               </span>
@@ -223,6 +249,7 @@ async function goToNextPost() {
           <v-card-text>Нет данных</v-card-text>
         </template>
 
+        </v-form>
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="isOpen = false">Закрыть</v-btn>
@@ -258,36 +285,20 @@ async function goToNextPost() {
   overflow: auto;
 }
 
-.modal-card-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 16px 16px 0;
-}
-
-.modal-title-text,
-.modal-title-edit {
-  flex: 1;
+.min-width-0 {
   min-width: 0;
 }
 
-.modal-title-text {
-  padding-left: 0;
+.flex-grow-1 {
+  flex-grow: 1;
 }
 
-.modal-title-edit {
-  padding-top: 0;
-}
-
-.modal-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.flex-shrink-0 {
   flex-shrink: 0;
 }
 
-.modal-body-edit {
-  width: 100%;
+.modal-title-edit :deep(.v-field) {
+  padding-top: 0;
 }
 
 .nav-zone {
@@ -313,69 +324,16 @@ async function goToNextPost() {
   user-select: none;
 }
 
-.author-block {
-  padding-bottom: 0;
-}
-.author-line {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.author-meta {
-  font-size: 0.875rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  margin-top: 2px;
-}
-
-.tags-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.meta {
-  display: flex;
-  gap: 12px;
-  padding: 0 16px 16px;
-  font-size: 0.875rem;
-}
-
-.meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .comments-block {
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  padding-top: 12px;
 }
-.comments-title {
-  font-weight: 600;
-  margin-bottom: 8px;
-  font-size: 0.9375rem;
-}
-.comment-item {
-  padding: 8px 0;
+
+.comment-item-border {
   border-bottom: 1px solid rgba(var(--v-border-color), 0.3);
 }
-.comment-item:last-child {
+
+.comment-item-border:last-child {
   border-bottom: none;
-}
-.comment-username {
-  font-size: 0.8125rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  margin-bottom: 4px;
-}
-.comment-body {
-  font-size: 0.875rem;
-}
-.comment-likes {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.8125rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  margin-top: 4px;
 }
 
 .modal-skeleton-title {

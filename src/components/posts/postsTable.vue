@@ -80,7 +80,7 @@ async function openPostModal(postId: number, index: number) {
   try {
     await coordinator.openPostForModal(postId, index)
   } catch (e) {
-        if (!isAbortError(e)) showSnackbar('Ошибка загрузки поста')
+    if (!isAbortError(e)) showSnackbar('Ошибка загрузки поста')
   }
 }
 
@@ -106,9 +106,9 @@ async function onRefresh() {
 </script>
 
 <template>
-  <div class="page-layout">
-    <v-container class="toolbar">
-      <v-row class="filters-row" align="center">
+  <div class="d-flex flex-column flex-fill min-height-0 overflow-hidden">
+    <v-container class="flex-shrink-0">
+      <v-row align="center" class="ga-2">
         <v-col cols="12" sm="4" md="3" lg="2">
           <v-select
             v-model="postsListStore.searchField"
@@ -149,13 +149,30 @@ async function onRefresh() {
       <v-label>Найдено {{ postsListStore.total }} постов</v-label>
     </v-container>
 
-    <div class="content-area">
-      <v-container v-if="postsListStore.isLoading" class="loader-wrap">
+    <div class="flex-fill min-height-0 overflow-y-auto">
+      <v-container
+        v-if="postsListStore.isLoading"
+        class="d-flex align-center justify-center"
+        style="height: 100%"
+      >
         <v-progress-circular indeterminate size="48" />
       </v-container>
       <v-container v-else>
-        <v-row class="cards-row">
-          <v-col v-for="(post, index) in posts" :key="post.id" cols="12" sm="6" md="4">
+        <div
+          v-if="posts.length === 0"
+          class="d-flex align-center justify-center text-medium-emphasis"
+        >
+          Посты по запросу не найдены
+        </div>
+        <v-row v-else>
+          <v-col
+            v-for="(post, index) in posts"
+            :key="post.id"
+            cols="12"
+            sm="6"
+            md="4"
+            class="d-flex"
+          >
             <PostCard :post="post" @open="openPostModal(post.id, index)" />
           </v-col>
         </v-row>
@@ -176,7 +193,7 @@ async function onRefresh() {
       </template>
     </v-snackbar>
 
-    <v-container class="footer">
+    <v-container class="flex-shrink-0">
       <v-pagination
         :length="postsListStore.pagesAmount"
         :total-visible="5"
@@ -188,40 +205,15 @@ async function onRefresh() {
 </template>
 
 <style scoped>
-.page-layout {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
+.min-height-0 {
   min-height: 0;
-  overflow: hidden;
 }
 
-.toolbar {
-  flex-shrink: 0;
-}
-
-.filters-row {
-  row-gap: 8px;
-}
-
-.content-area {
+.flex-fill {
   flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
 }
 
-.loader-wrap {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-}
-
-.footer {
+.flex-shrink-0 {
   flex-shrink: 0;
-}
-
-.cards-row :deep(.v-col) {
-  display: flex;
 }
 </style>

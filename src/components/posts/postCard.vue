@@ -18,19 +18,19 @@ const truncatedPostBody = computed(() => {
     :subtitle="`ID автора: ${post.userId}`"
     @click="emit('open')"
   >
-    <v-card-text>
+    <v-card-text class="flex-grow-1 min-height-0">
       {{ truncatedPostBody }}
     </v-card-text>
-    <div class="meta">
-      <span class="meta-item">
+    <div class="d-flex ga-3 px-4 pb-4 text-body-2">
+      <span class="d-inline-flex align-center ga-1">
         <v-icon icon="mdi-thumb-up-outline" size="18" />
         {{ post.reactions.likes }}
       </span>
-      <span class="meta-item">
+      <span class="d-inline-flex align-center ga-1">
         <v-icon icon="mdi-thumb-down-outline" size="18" />
         {{ post.reactions.dislikes }}
       </span>
-      <span class="meta-item">
+      <span class="d-inline-flex align-center ga-1">
         <v-icon icon="mdi-eye-outline" size="18" />
         {{ post.views }}
       </span>
@@ -39,19 +39,6 @@ const truncatedPostBody = computed(() => {
 </template>
 
 <style scoped>
-.meta {
-  display: flex;
-  gap: 12px;
-  padding: 0 16px 16px;
-  font-size: 0.875rem;
-}
-
-.meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .post-card {
   cursor: pointer;
   width: 100%;
@@ -65,10 +52,14 @@ const truncatedPostBody = computed(() => {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
-.post-card :deep(.v-card-text) {
-  flex: 1 1 auto;
+.min-height-0 {
   min-height: 0;
 }
+
+.flex-grow-1 {
+  flex-grow: 1;
+}
+
 .post-card:hover {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.18);
