@@ -56,8 +56,10 @@ async function getAllPosts(signal?: AbortSignal): Promise<PostDto[]> {
     return allPostsCache.data
   }
 
-  const url = `${POSTS_BASE_URL}?limit=0&select=${encodeURIComponent(POSTS_SELECT)}`
-  const data = await fetchJson<{ posts?: unknown[] }>(url, { signal })
+  const data = await fetchJson<{ posts?: unknown[] }>(POSTS_BASE_URL, {
+    signal,
+    params: { limit: 0, select: POSTS_SELECT },
+  })
   const rawPosts = Array.isArray(data.posts) ? data.posts : []
   const posts = normalizePostList(rawPosts)
   allPostsCache = { data: posts, fetchedAt: Date.now() }

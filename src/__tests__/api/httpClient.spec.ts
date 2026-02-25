@@ -43,6 +43,49 @@ describe('fetchJson', () => {
     expect(result).toEqual({ ok: true })
   })
 
+  it('appends params as query string', async () => {
+    globalThis.fetch = mockFetch({})
+
+    await fetchJson('https://api.test/items', { params: { limit: 10, skip: 0 } })
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/items?limit=10&skip=0',
+      { signal: undefined },
+    )
+  })
+
+  it('encodes param values in query string', async () => {
+    globalThis.fetch = mockFetch({})
+
+    await fetchJson('https://api.test/search', { params: { q: 'hello world', page: 1 } })
+
+    const callUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string
+    expect(callUrl).toMatch(/q=hello(%20|\+)world/)
+    expect(callUrl).toContain('page=1')
+  })
+
+  it('leaves URL unchanged when params is empty object', async () => {
+    globalThis.fetch = mockFetch({})
+
+    await fetchJson('https://api.test/items', { params: {} })
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://api.test/items', { signal: undefined })
+  })
+
+  it('combines params and signal in options', async () => {
+    globalThis.fetch = mockFetch({})
+    const controller = new AbortController()
+
+    await fetchJson('https://api.test/items', {
+      params: { limit: 5 },
+      signal: controller.signal,
+    })
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://api.test/items?limit=5', {
+      signal: controller.signal,
+    })
+  })
+
   it('throws when response is not ok', async () => {
     globalThis.fetch = mockFetch(null, 404, false)
 
@@ -123,5 +166,18 @@ describe('fetchPatchJson', () => {
 
     const callArgs = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit
     expect(callArgs.body).toBe(JSON.stringify(body))
+  })
+
+  it('appends params as query string', async () => {
+    globalThis.fetch = mockFetch({})
+
+    await fetchPatchJson('https://api.test/items/1', { title: 'X' }, { params: { foo: 'bar' } })
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://api.test/items/1?foo=bar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'X' }),
+      signal: undefined,
+    })
   })
 })

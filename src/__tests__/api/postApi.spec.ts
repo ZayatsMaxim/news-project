@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getPosts, getPostById, patchPost, getPostComments, getPostIds } from '@/api/postApi'
+import { getPosts, getPostById, patchPost, getPostComments } from '@/api/postApi'
 
 /** Expected contract: path and default select so tests fail if production config drifts. */
 const POSTS_PATH = '/posts'
@@ -52,9 +52,13 @@ describe('getPosts', () => {
 
     expect(mockedFetchJson).toHaveBeenCalledOnce()
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      signal?: AbortSignal
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('limit=10&skip=0')
-    expect(url).toContain(`select=${encodeURIComponent(DEFAULT_SELECT)}`)
+    expect(url).not.toContain('?')
+    expect(options.params).toEqual({ limit: 10, skip: 0, select: DEFAULT_SELECT })
     expect(result.posts).toHaveLength(1)
     expect(result.posts[0]!.id).toBe(1)
     expect(result.total).toBe(1)
@@ -66,8 +70,11 @@ describe('getPosts', () => {
     await getPosts({ limit: 5, skip: 0, select: 'id,title' })
 
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
-    expect(url).toContain(`select=${encodeURIComponent('id,title')}`)
+    expect(options.params).toMatchObject({ limit: 5, skip: 0, select: 'id,title' })
   })
 
   it('delegates to searchByTitleLocal when field=title and query is set', async () => {
@@ -87,11 +94,12 @@ describe('getPosts', () => {
     await getPosts({ limit: 10, skip: 0, query: 'test query', field: 'body' })
 
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('/search?q=')
-    expect(url).toContain(encodeURIComponent('test query'))
-    expect(url).toContain('limit=10')
-    expect(url).toContain('skip=0')
+    expect(url).toContain('/search')
+    expect(options.params).toMatchObject({ q: 'test query', limit: 10, skip: 0 })
   })
 
   it('fetches from /user/:id endpoint when field=userId with numeric query', async () => {
@@ -100,8 +108,12 @@ describe('getPosts', () => {
     await getPosts({ limit: 10, skip: 0, query: '42', field: 'userId' })
 
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
     expect(url).toContain('/user/42')
+    expect(options.params).toMatchObject({ limit: 10, skip: 0 })
   })
 
   it('returns empty response for field=userId with non-numeric query', async () => {
@@ -118,8 +130,11 @@ describe('getPosts', () => {
     await getPosts({ limit: 5, skip: 0, query: '  ', field: 'body' })
 
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('limit=5&skip=0')
+    expect(options.params).toMatchObject({ limit: 5, skip: 0 })
   })
 
   it('falls back to base URL for unknown search field (default branch)', async () => {
@@ -133,17 +148,17 @@ describe('getPosts', () => {
     })
 
     const url = mockedFetchJson.mock.calls[0]![0] as string
+    const options = mockedFetchJson.mock.calls[0]![1] as {
+      params?: Record<string, string | number>
+    }
     expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('limit=5&skip=0')
+    expect(options.params).toMatchObject({ limit: 5, skip: 0 })
     expect(mockedSearchLocal).not.toHaveBeenCalled()
   })
 
   it('normalizes posts from raw response', async () => {
     mockedFetchJson.mockResolvedValue({
-      posts: [
-        makeRawPost({ id: 1, title: 'A' }),
-        makeRawPost({ id: 2, title: 'B' }),
-      ],
+      posts: [makeRawPost({ id: 1, title: 'A' }), makeRawPost({ id: 2, title: 'B' })],
       total: 2,
       skip: 0,
       limit: 10,
@@ -185,32 +200,10 @@ describe('getPosts', () => {
 
     await getPosts({ limit: 5, skip: 0, signal: controller.signal })
 
-    expect(mockedFetchJson.mock.calls[0]![1]).toEqual({ signal: controller.signal })
-  })
-})
-
-// --- getPostIds ---
-
-describe('getPostIds', () => {
-  it('returns array of post ids', async () => {
-    mockedFetchJson.mockResolvedValue({
-      posts: [makeRawPost({ id: 10 }), makeRawPost({ id: 20 }), makeRawPost({ id: 30 })],
-      total: 3,
-      skip: 0,
-      limit: 10,
+    expect(mockedFetchJson.mock.calls[0]![1]).toMatchObject({
+      signal: controller.signal,
+      params: { limit: 5, skip: 0, select: DEFAULT_SELECT },
     })
-
-    const ids = await getPostIds({ limit: 10, skip: 0 })
-
-    expect(ids).toEqual([10, 20, 30])
-  })
-
-  it('returns empty array when no posts', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 10 })
-
-    const ids = await getPostIds({ limit: 10, skip: 0 })
-
-    expect(ids).toEqual([])
   })
 })
 
@@ -223,7 +216,9 @@ describe('getPostById', () => {
 
     const result = await getPostById(5)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/5`), { signal: undefined })
+    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/5`), {
+      signal: undefined,
+    })
     expect(result.id).toBe(5)
     expect(result.title).toBe('Single')
     expect(result.tags).toEqual(['vue', 'ts'])
@@ -235,7 +230,9 @@ describe('getPostById', () => {
 
     await getPostById(1, controller.signal)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/1`), { signal: controller.signal })
+    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/1`), {
+      signal: controller.signal,
+    })
   })
 })
 
@@ -281,7 +278,13 @@ describe('getPostComments', () => {
   it('fetches comments for a post', async () => {
     const response = {
       comments: [
-        { id: 1, body: 'Nice', postId: 5, likes: 3, user: { id: 1, username: 'u1', fullName: 'User 1' } },
+        {
+          id: 1,
+          body: 'Nice',
+          postId: 5,
+          likes: 3,
+          user: { id: 1, username: 'u1', fullName: 'User 1' },
+        },
       ],
       total: 1,
       skip: 0,
@@ -291,7 +294,10 @@ describe('getPostComments', () => {
 
     const result = await getPostComments(5)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/5/comments`), { signal: undefined })
+    expect(mockedFetchJson).toHaveBeenCalledWith(
+      expect.stringContaining(`${POSTS_PATH}/5/comments`),
+      { signal: undefined },
+    )
     expect(result.comments).toHaveLength(1)
     expect(result.comments[0]!.body).toBe('Nice')
   })
@@ -302,6 +308,9 @@ describe('getPostComments', () => {
 
     await getPostComments(1, controller.signal)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/1/comments`), { signal: controller.signal })
+    expect(mockedFetchJson).toHaveBeenCalledWith(
+      expect.stringContaining(`${POSTS_PATH}/1/comments`),
+      { signal: controller.signal },
+    )
   })
 })

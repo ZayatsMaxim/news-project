@@ -5,6 +5,19 @@
 
 export interface FetchJsonOptions {
   signal?: AbortSignal
+  params?: Record<string, string | number>
+}
+
+function buildUrl(
+  base: string,
+  params?: Record<string, string | number>,
+): string {
+  if (!params || Object.keys(params).length === 0) return base
+  const url = new URL(base)
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, String(value))
+  }
+  return url.toString()
 }
 
 /**
@@ -15,8 +28,9 @@ export async function fetchJson<T>(
   url: string,
   options?: FetchJsonOptions,
 ): Promise<T> {
-  const { signal } = options ?? {}
-  const response = await fetch(url, { signal })
+  const { signal, params } = options ?? {}
+  const finalUrl = buildUrl(url, params)
+  const response = await fetch(finalUrl, { signal })
   if (!response.ok) {
     throw new Error(`Failed to fetch: ${response.status}`)
   }
@@ -31,8 +45,9 @@ export async function fetchPatchJson<T>(
   body: Record<string, unknown>,
   options?: FetchJsonOptions,
 ): Promise<T> {
-  const { signal } = options ?? {}
-  const response = await fetch(url, {
+  const { signal, params } = options ?? {}
+  const finalUrl = buildUrl(url, params)
+  const response = await fetch(finalUrl, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

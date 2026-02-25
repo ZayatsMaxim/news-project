@@ -23,18 +23,13 @@ export interface GetPostsParams {
 }
 
 type PostListRoute =
-  | { kind: 'remote'; url: string }
+  | { kind: 'remote'; url: string; params: Record<string, string | number> }
   | { kind: 'local'; query: string }
   | { kind: 'empty' }
 
-function resolvePostListRoute(
-  query: string,
-  field: PostSearchField,
-  limit: number,
-  skip: number,
-): PostListRoute {
+function resolvePostListRoute(query: string, field: PostSearchField): PostListRoute {
   if (!query) {
-    return { kind: 'remote', url: `${POSTS_BASE_URL}?limit=${limit}&skip=${skip}` }
+    return { kind: 'remote', url: POSTS_BASE_URL, params: {} }
   }
   switch (field) {
     case 'title':
@@ -42,20 +37,16 @@ function resolvePostListRoute(
     case 'body':
       return {
         kind: 'remote',
-        url: `${POSTS_BASE_URL}/search?q=${encodeURIComponent(query)}&limit=${limit}&skip=${skip}`,
+        url: `${POSTS_BASE_URL}/search`,
+        params: { q: query },
       }
     case 'userId':
       return /^\d+$/.test(query)
-        ? { kind: 'remote', url: `${POSTS_BASE_URL}/user/${query}?limit=${limit}&skip=${skip}` }
+        ? { kind: 'remote', url: `${POSTS_BASE_URL}/user/${query}`, params: {} }
         : { kind: 'empty' }
     default:
-      return { kind: 'remote', url: `${POSTS_BASE_URL}?limit=${limit}&skip=${skip}` }
+      return { kind: 'remote', url: POSTS_BASE_URL, params: {} }
   }
-}
-
-function withSelectParam(url: string, select: string): string {
-  const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}select=${encodeURIComponent(select)}`
 }
 
 function emptyResponse(limit: number): PostResponseDto {
@@ -71,10 +62,11 @@ interface RawPostListResponse {
 
 async function fetchPostsJson(
   url: string,
+  params: Record<string, string | number>,
   signal: AbortSignal | undefined,
   fallbackLimit: number,
 ): Promise<PostResponseDto> {
-  const data = await fetchJson<RawPostListResponse>(url, { signal })
+  const data = await fetchJson<RawPostListResponse>(url, { signal, params })
   const rawPosts = Array.isArray(data.posts) ? data.posts : []
   return {
     posts: normalizePostList(rawPosts),
@@ -87,22 +79,18 @@ async function fetchPostsJson(
 export async function getPosts(params: GetPostsParams): Promise<PostResponseDto> {
   const { limit, skip, query = '', field = 'title', signal, select } = params
   const effectiveSelect = select ?? POSTS_SELECT
-  const route = resolvePostListRoute(query.trim(), field, limit, skip)
+  const route = resolvePostListRoute(query.trim(), field)
 
   switch (route.kind) {
     case 'local':
       return searchByTitleLocal(route.query, skip, limit, signal)
     case 'empty':
       return emptyResponse(limit)
-    case 'remote':
-      return fetchPostsJson(withSelectParam(route.url, effectiveSelect), signal, limit)
+    case 'remote': {
+      const requestParams = { ...route.params, limit, skip, select: effectiveSelect }
+      return fetchPostsJson(route.url, requestParams, signal, limit)
+    }
   }
-}
-
-/** Возвращает только id постов на странице; для навигации в модалке без полной загрузки. */
-export async function getPostIds(params: Omit<GetPostsParams, 'signal'>): Promise<number[]> {
-  const data = await getPosts(params)
-  return data.posts.map((p) => p.id)
 }
 
 /** Получить пост по id (GET /posts/:postId) */

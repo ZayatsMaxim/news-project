@@ -142,10 +142,12 @@ describe('searchByTitleLocal', () => {
 
     await searchByTitleLocal('x', 0, 10)
 
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('limit=0')
-    expect(url).toContain(`select=${encodeURIComponent(DEFAULT_SELECT)}`)
+    expect(mockedFetchJson).toHaveBeenCalledWith(
+      expect.stringContaining(POSTS_PATH),
+      expect.objectContaining({
+        params: { limit: 0, select: DEFAULT_SELECT },
+      }),
+    )
   })
 
   it('handles missing posts array in API response', async () => {
@@ -163,7 +165,10 @@ describe('searchByTitleLocal', () => {
 
     await searchByTitleLocal('x', 0, 10, controller.signal)
 
-    expect(mockedFetchJson.mock.calls[0]![1]).toEqual({ signal: controller.signal })
+    expect(mockedFetchJson.mock.calls[0]![1]).toEqual({
+      signal: controller.signal,
+      params: { limit: 0, select: DEFAULT_SELECT },
+    })
   })
 })
 
