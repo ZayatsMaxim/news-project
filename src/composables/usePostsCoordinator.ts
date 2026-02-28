@@ -37,6 +37,7 @@ export function usePostsCoordinator() {
   async function saveAndSync(postId: number): Promise<boolean> {
     const updated = await detailsStore.saveChanges(postId)
     if (updated) {
+      console.log('updated', updated)
       listStore.updatePostInList(postId, { title: updated.title, body: updated.body })
     }
     return updated !== null

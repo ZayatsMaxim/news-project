@@ -1,6 +1,6 @@
-import { get } from '@/api/httpClient'
 import { mapPostsListToDto } from '@/api/mappers/postMapper'
 import { apiConfig } from '@/config/api'
+import { apiClient } from './axiosHttpClient'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
 
@@ -56,11 +56,11 @@ async function getAllPosts(signal?: AbortSignal): Promise<PostDto[]> {
     return allPostsCache.data
   }
 
-  const data = await get<{ posts?: unknown[] }>(POSTS_BASE_URL, {
+  const response = await apiClient.get<{ posts?: unknown[] }>(POSTS_BASE_URL, {
     signal,
     params: { limit: 0, select: POSTS_SELECT },
   })
-  const rawPosts = Array.isArray(data.posts) ? data.posts : []
+  const rawPosts = Array.isArray(response.data.posts) ? response.data.posts : []
   const posts = mapPostsListToDto(rawPosts)
   allPostsCache = { data: posts, fetchedAt: Date.now() }
 

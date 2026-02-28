@@ -1,5 +1,5 @@
-import { get, patch } from '@/api/httpClient'
 import { apiConfig } from '@/config/api'
+import { apiClient } from './axiosHttpClient'
 import type { CommentDto } from '@/dto/post/comment/commentDto'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
@@ -66,13 +66,13 @@ async function fetchPostsJson(
   signal: AbortSignal | undefined,
   fallbackLimit: number,
 ): Promise<PostResponseDto> {
-  const data = await get<RawPostListResponse>(url, { signal, params })
-  const rawPosts = Array.isArray(data.posts) ? data.posts : []
+  const response = await apiClient.get<RawPostListResponse>(url, { signal, params })
+  const rawPosts = Array.isArray(response.data.posts) ? response.data.posts : []
   return {
     posts: mapPostsListToDto(rawPosts),
-    total: toFiniteNumber(data.total, 0),
-    skip: toFiniteNumber(data.skip, 0),
-    limit: toFiniteNumber(data.limit, fallbackLimit),
+    total: toFiniteNumber(response.data.total, 0),
+    skip: toFiniteNumber(response.data.skip, 0),
+    limit: toFiniteNumber(response.data.limit, fallbackLimit),
   }
 }
 
@@ -95,8 +95,8 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
 
 /** Получить пост по id (GET /posts/:postId) */
 export async function getPostById(postId: number, signal?: AbortSignal): Promise<PostDto> {
-  const raw = await get<RawPostDto>(`${POSTS_BASE_URL}/${postId}`, { signal })
-  return mapPostToDto(raw)
+  const response = await apiClient.get<RawPostDto>(`${POSTS_BASE_URL}/${postId}`, { signal })
+  return mapPostToDto(response.data)
 }
 
 /** Тело PATCH-запроса для обновления поста (dummyjson принимает частичные поля). */
@@ -111,12 +111,12 @@ export async function patchPost(
   body: PatchPostBody,
   signal?: AbortSignal,
 ): Promise<PostDto> {
-  const raw = await patch<RawPostDto>(
+  const response = await apiClient.patch<RawPostDto>(
     `${POSTS_BASE_URL}/${postId}`,
     body as Record<string, unknown>,
     { signal },
   )
-  return mapPostToDto(raw)
+  return mapPostToDto(response.data)
 }
 
 /** Ответ GET /posts/:postId/comments */
@@ -132,5 +132,9 @@ export async function getPostComments(
   postId: number,
   signal?: AbortSignal,
 ): Promise<PostCommentsResponseDto> {
-  return get<PostCommentsResponseDto>(`${POSTS_BASE_URL}/${postId}/comments`, { signal })
+  const response = await apiClient.get<PostCommentsResponseDto>(
+    `${POSTS_BASE_URL}/${postId}/comments`,
+    { signal },
+  )
+  return response.data
 }
