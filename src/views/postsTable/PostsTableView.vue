@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 import { usePostsListStore } from '@/stores/postsListStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
 import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
 import { isAbortError } from '@/utils/error'
+import {
+  SNACKBAR_ERROR_POST_LOAD_FAILED,
+  SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED,
+} from '@/constants/snackbarErrorMessages'
 
 import PostCard from '@/components/posts/postCard.vue'
 import PostDetailsModal from '@/components/posts/postDetailsModal.vue'
 
 const postsListStore = usePostsListStore()
 const coordinator = usePostsCoordinator()
-const { snackbarVisible, snackbarMessage, showSnackbar, closeSnackbar } = useErrorSnackbar()
-provide('errorSnackbar', { showSnackbar, closeSnackbar })
+const { showSnackbar } = useErrorSnackbar()
 
 const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const isHydrating = ref(true)
@@ -37,7 +40,7 @@ watch(
       try {
         await coordinator.searchPosts(query, field)
       } catch (e) {
-        if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+        if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
       }
     }, 400)
   },
@@ -56,7 +59,7 @@ watch(
       try {
         await coordinator.searchPosts(postsListStore.query, postsListStore.searchField)
       } catch (e) {
-        if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+        if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
       }
     })()
   },
@@ -67,7 +70,7 @@ onMounted(async () => {
   try {
     await postsListStore.ensurePostsLoaded()
   } catch (e) {
-    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
   }
   await nextTick()
   isHydrating.value = false
@@ -82,7 +85,7 @@ async function openPostModal(postId: number, index: number) {
   try {
     await coordinator.openPostForModal(postId, index)
   } catch (e) {
-    if (!isAbortError(e)) showSnackbar('Ошибка загрузки поста')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POST_LOAD_FAILED)
   }
 }
 
@@ -94,7 +97,7 @@ async function onPageChange(page: number) {
   try {
     await postsListStore.loadPage(page)
   } catch (e) {
-    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
   }
 }
 
@@ -102,7 +105,7 @@ async function onRefresh() {
   try {
     await coordinator.refreshPosts()
   } catch (e) {
-    if (!isAbortError(e)) showSnackbar('Ошибка загрузки списка постов')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
   }
 }
 </script>
@@ -182,18 +185,6 @@ async function onRefresh() {
     </div>
 
     <PostDetailsModal v-model="isPostModalOpen" />
-
-    <v-snackbar
-      v-model="snackbarVisible"
-      :text="snackbarMessage"
-      color="error"
-      location="bottom"
-      @update:model-value="(v: boolean) => !v && closeSnackbar()"
-    >
-      <template #actions>
-        <v-btn variant="text" @click="closeSnackbar">Закрыть</v-btn>
-      </template>
-    </v-snackbar>
 
     <v-container class="flex-shrink-0">
       <v-pagination

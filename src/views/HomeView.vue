@@ -4,15 +4,16 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useLoginUserStore } from '@/stores/loginUserStore'
 import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { SNACKBAR_ERROR_PROFILE_LOAD_FAILED } from '@/constants/snackbarErrorMessages'
 
 const loginUserStore = useLoginUserStore()
 const { user, fullName } = storeToRefs(loginUserStore)
 const router = useRouter()
-const { showSnackbar, closeSnackbar, snackbarVisible, snackbarMessage } = useErrorSnackbar()
+const { showSnackbar } = useErrorSnackbar()
 
 onMounted(() => {
   loginUserStore.fetchAuthorizedUser().catch(() => {
-    showSnackbar('Ошибка загрузки профиля пользователя')
+    showSnackbar(SNACKBAR_ERROR_PROFILE_LOAD_FAILED)
   })
 })
 
@@ -67,18 +68,6 @@ function onLogout() {
     <main class="flex-fill min-height-0 d-flex flex-column">
       <RouterView />
     </main>
-
-    <v-snackbar
-      v-model="snackbarVisible"
-      :text="snackbarMessage"
-      color="error"
-      location="bottom"
-      @update:model-value="(v: boolean) => !v && closeSnackbar()"
-    >
-      <template #actions>
-        <v-btn variant="text" @click="closeSnackbar">Закрыть</v-btn>
-      </template>
-    </v-snackbar>
   </div>
 </template>
 

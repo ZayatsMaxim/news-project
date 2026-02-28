@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch, inject } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { usePostDetailsStore } from '@/stores/postDetailsStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
 import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
 import { isAbortError } from '@/utils/error'
+import {
+  SNACKBAR_ERROR_POST_LOAD_FAILED,
+  SNACKBAR_ERROR_POST_SAVE_FAILED,
+} from '@/constants/snackbarErrorMessages'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 
 const postDetailsStore = usePostDetailsStore()
 const coordinator = usePostsCoordinator()
-const errorSnackbar = inject<ReturnType<typeof useErrorSnackbar>>('errorSnackbar')!
+const { showSnackbar } = useErrorSnackbar()
 
 const isNavigating = ref(false)
 const isEditing = ref(false)
@@ -78,7 +82,7 @@ async function saveChanges() {
     const saved = await coordinator.saveAndSync(postId)
     if (saved) isEditing.value = false
   } catch (e) {
-    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка сохранения изменений')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POST_SAVE_FAILED)
   }
 }
 
@@ -88,7 +92,7 @@ async function goToPrevPost() {
   try {
     await coordinator.goToPrevPost()
   } catch (e) {
-    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка загрузки поста')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POST_LOAD_FAILED)
   } finally {
     isNavigating.value = false
   }
@@ -100,7 +104,7 @@ async function goToNextPost() {
   try {
     await coordinator.goToNextPost()
   } catch (e) {
-    if (!isAbortError(e)) errorSnackbar.showSnackbar('Ошибка загрузки поста')
+    if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POST_LOAD_FAILED)
   } finally {
     isNavigating.value = false
   }

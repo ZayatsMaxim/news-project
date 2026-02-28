@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
 
 describe('useErrorSnackbar', () => {
+  beforeEach(() => {
+    const { closeSnackbar } = useErrorSnackbar()
+    closeSnackbar()
+  })
+
   it('showSnackbar sets message and visible', () => {
     const { snackbarMessage, snackbarVisible, showSnackbar } = useErrorSnackbar()
 
@@ -22,5 +27,14 @@ describe('useErrorSnackbar', () => {
 
     closeSnackbar()
     expect(snackbarVisible.value).toBe(false)
+  })
+
+  it('returns same refs and methods for every caller (singleton)', () => {
+    const a = useErrorSnackbar()
+    const b = useErrorSnackbar()
+    expect(a.snackbarVisible).toBe(b.snackbarVisible)
+    expect(a.snackbarMessage).toBe(b.snackbarMessage)
+    expect(a.showSnackbar).toBe(b.showSnackbar)
+    expect(a.closeSnackbar).toBe(b.closeSnackbar)
   })
 })
