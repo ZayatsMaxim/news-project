@@ -4,5 +4,8 @@ export const apiConfig = {
   baseUrl,
   postsBaseUrl: `${baseUrl}/posts`,
   usersBaseUrl: `${baseUrl}/users`,
+  authBaseUrl: `${baseUrl}/auth`,
   postsSelect: 'id,title,body,userId,reactions,views',
 } as const
+
+export const REFRESH_TOKEN_KEY = 'RefreshToken'

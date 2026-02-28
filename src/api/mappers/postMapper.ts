@@ -12,7 +12,7 @@ export interface RawPostDto {
   reactions?: { likes?: unknown; dislikes?: unknown }
 }
 
-function normalizeReactions(raw: RawPostDto['reactions']): PostReactionsDto {
+function mapReactionsToDto(raw: RawPostDto['reactions']): PostReactionsDto {
   return {
     likes: toFiniteNumber(raw?.likes, 0),
     dislikes: toFiniteNumber(raw?.dislikes, 0),
@@ -20,10 +20,10 @@ function normalizeReactions(raw: RawPostDto['reactions']): PostReactionsDto {
 }
 
 /**
- * Нормализует сырой объект поста из API в PostDto.
+ * Мапит сырой объект поста из API в PostDto.
  * Поддерживает ответ для списка постов (без tags) и ответ для одного поста (GET /posts/:id с полем tags).
  */
-export function normalizePost(raw: unknown): PostDto {
+export function mapPostToDto(raw: unknown): PostDto {
   const post = (typeof raw === 'object' && raw !== null ? raw : {}) as RawPostDto
   const tags = Array.isArray(post.tags)
     ? (post.tags.filter((t): t is string => typeof t === 'string') as string[])
@@ -34,14 +34,14 @@ export function normalizePost(raw: unknown): PostDto {
     body: typeof post.body === 'string' ? post.body : '',
     userId: toFiniteNumber(post.userId, 0),
     views: toFiniteNumber(post.views, 0),
-    reactions: normalizeReactions(post.reactions),
+    reactions: mapReactionsToDto(post.reactions),
     ...(tags?.length ? { tags } : {}),
   }
 }
 
 /**
- * Нормализует массив сырых постов в PostDto[].
+ * Мапит массив сырых постов в PostDto[].
  */
-export function normalizePostList(rawPosts: unknown[]): PostDto[] {
-  return rawPosts.map(normalizePost)
+export function mapPostsListToDto(rawPosts: unknown[]): PostDto[] {
+  return rawPosts.map(mapPostToDto)
 }

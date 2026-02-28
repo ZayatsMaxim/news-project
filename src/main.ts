@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import { aliases, mdi } from 'vuetify/iconsets/mdi'
-
+import { router } from './router/router'
 import App from './App.vue'
 
 import 'vuetify/styles'
@@ -19,6 +19,4 @@ const vuetify = createVuetify({
   },
 })
 
-app.use(createPinia())
-app.use(vuetify)
-app.mount('#app')
+app.use(createPinia()).use(vuetify).use(router).mount('#app')

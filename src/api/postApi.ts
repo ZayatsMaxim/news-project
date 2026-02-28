@@ -1,9 +1,9 @@
-import { fetchJson, fetchPatchJson } from '@/api/httpClient'
+import { get, patch } from '@/api/httpClient'
 import { apiConfig } from '@/config/api'
 import type { CommentDto } from '@/dto/post/comment/commentDto'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
-import { normalizePost, normalizePostList, type RawPostDto } from '@/api/mappers/postMapper'
+import { mapPostToDto, mapPostsListToDto, type RawPostDto } from '@/api/mappers/postMapper'
 import { toFiniteNumber } from '@/utils/number'
 import { searchByTitleLocal } from './postLocalTitleSearch'
 
@@ -66,10 +66,10 @@ async function fetchPostsJson(
   signal: AbortSignal | undefined,
   fallbackLimit: number,
 ): Promise<PostResponseDto> {
-  const data = await fetchJson<RawPostListResponse>(url, { signal, params })
+  const data = await get<RawPostListResponse>(url, { signal, params })
   const rawPosts = Array.isArray(data.posts) ? data.posts : []
   return {
-    posts: normalizePostList(rawPosts),
+    posts: mapPostsListToDto(rawPosts),
     total: toFiniteNumber(data.total, 0),
     skip: toFiniteNumber(data.skip, 0),
     limit: toFiniteNumber(data.limit, fallbackLimit),
@@ -95,8 +95,8 @@ export async function getPosts(params: GetPostsParams): Promise<PostResponseDto>
 
 /** Получить пост по id (GET /posts/:postId) */
 export async function getPostById(postId: number, signal?: AbortSignal): Promise<PostDto> {
-  const raw = await fetchJson<RawPostDto>(`${POSTS_BASE_URL}/${postId}`, { signal })
-  return normalizePost(raw)
+  const raw = await get<RawPostDto>(`${POSTS_BASE_URL}/${postId}`, { signal })
+  return mapPostToDto(raw)
 }
 
 /** Тело PATCH-запроса для обновления поста (dummyjson принимает частичные поля). */
@@ -111,12 +111,12 @@ export async function patchPost(
   body: PatchPostBody,
   signal?: AbortSignal,
 ): Promise<PostDto> {
-  const raw = await fetchPatchJson<RawPostDto>(
+  const raw = await patch<RawPostDto>(
     `${POSTS_BASE_URL}/${postId}`,
     body as Record<string, unknown>,
     { signal },
   )
-  return normalizePost(raw)
+  return mapPostToDto(raw)
 }
 
 /** Ответ GET /posts/:postId/comments */
@@ -132,5 +132,5 @@ export async function getPostComments(
   postId: number,
   signal?: AbortSignal,
 ): Promise<PostCommentsResponseDto> {
-  return fetchJson<PostCommentsResponseDto>(`${POSTS_BASE_URL}/${postId}/comments`, { signal })
+  return get<PostCommentsResponseDto>(`${POSTS_BASE_URL}/${postId}/comments`, { signal })
 }

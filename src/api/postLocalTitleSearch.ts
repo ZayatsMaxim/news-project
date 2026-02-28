@@ -1,5 +1,5 @@
-import { fetchJson } from '@/api/httpClient'
-import { normalizePostList } from '@/api/mappers/postMapper'
+import { get } from '@/api/httpClient'
+import { mapPostsListToDto } from '@/api/mappers/postMapper'
 import { apiConfig } from '@/config/api'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
@@ -56,12 +56,12 @@ async function getAllPosts(signal?: AbortSignal): Promise<PostDto[]> {
     return allPostsCache.data
   }
 
-  const data = await fetchJson<{ posts?: unknown[] }>(POSTS_BASE_URL, {
+  const data = await get<{ posts?: unknown[] }>(POSTS_BASE_URL, {
     signal,
     params: { limit: 0, select: POSTS_SELECT },
   })
   const rawPosts = Array.isArray(data.posts) ? data.posts : []
-  const posts = normalizePostList(rawPosts)
+  const posts = mapPostsListToDto(rawPosts)
   allPostsCache = { data: posts, fetchedAt: Date.now() }
 
   return posts

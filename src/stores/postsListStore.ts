@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { getPosts, type PostSearchField } from '@/api/postApi'
-import { normalizePostList } from '@/api/mappers/postMapper'
+import { mapPostsListToDto } from '@/api/mappers/postMapper'
 import { apiConfig } from '@/config/api'
 import type { PostDto } from '@/dto/post/postDto'
 import type { PostResponseDto } from '@/dto/post/postResponseDto'
@@ -62,7 +62,7 @@ export const usePostsListStore = defineStore('postsList', {
 
         const data = JSON.parse(raw) as Partial<StoredPostsState> & { posts?: unknown[] }
 
-        this.posts = normalizePostList(Array.isArray(data.posts) ? data.posts : [])
+        this.posts = mapPostsListToDto(Array.isArray(data.posts) ? data.posts : [])
         this.total = toFiniteNumber(data.total, 0)
         this.skip = toFiniteNumber(data.skip, 0)
         this.page = toFiniteNumber(data.page, 1)
@@ -116,9 +116,7 @@ export const usePostsListStore = defineStore('postsList', {
 
         this.saveToStorage()
       } catch (error) {
-        if (isAbortError(error)) {
-          // do nothing
-        } else if (getHttpStatus(error) === 404 && this.searchField === 'userId') {
+        if (!isAbortError(error) && getHttpStatus(error) === 404 && this.searchField === 'userId') {
           this.posts = []
           this.total = 0
           this.skip = 0

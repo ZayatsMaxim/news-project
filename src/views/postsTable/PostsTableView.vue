@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
-import PostCard from './postCard.vue'
-import PostDetailsModal from './postDetailsModal.vue'
+
 import { usePostsListStore } from '@/stores/postsListStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
 import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
 import { isAbortError } from '@/utils/error'
+
+import PostCard from '@/components/posts/postCard.vue'
+import PostDetailsModal from '@/components/posts/postDetailsModal.vue'
 
 const postsListStore = usePostsListStore()
 const coordinator = usePostsCoordinator()
@@ -133,16 +135,16 @@ async function onRefresh() {
           />
         </v-col>
 
-        <v-col cols="12" sm="auto">
+        <v-col cols="12" sm="auto" class="d-flex ga-5 justify-end">
           <v-btn
+            icon="mdi-refresh"
             color="primary"
-            variant="outlined"
+            variant="plain"
             :loading="postsListStore.isLoading"
             :disabled="postsListStore.isLoading"
+            aria-label="Обновить"
             @click="onRefresh"
-          >
-            Обновить
-          </v-btn>
+          />
         </v-col>
       </v-row>
 

@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getUser } from '@/api/userApi'
+import { getUser, login, refreshAuth, getAuthUser } from '@/api/userApi'
 
-/** Expected path contract so tests fail if production config drifts. */
-const USERS_PATH = '/users'
-
-vi.mock('@/api/httpClient', () => ({
-  fetchJson: vi.fn(),
+vi.mock('@/api/axiosHttpClient', () => ({
+  apiClient: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
 }))
 
-import { fetchJson } from '@/api/httpClient'
-const mockedFetchJson = vi.mocked(fetchJson)
+vi.mock('@/config/api', () => ({
+  apiConfig: {
+    baseUrl: 'https://api.test',
+    usersBaseUrl: 'https://api.test/users',
+    authBaseUrl: 'https://api.test/auth',
+  },
+}))
 
-beforeEach(() => {
-  vi.clearAllMocks()
-})
+import { apiClient } from '@/api/axiosHttpClient'
+
+const mockedGet = vi.mocked(apiClient.get)
+const mockedPost = vi.mocked(apiClient.post)
 
 function makeRawUser(overrides: Record<string, unknown> = {}) {
   return {
@@ -26,13 +32,36 @@ function makeRawUser(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function makeRawUserLogin(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    username: 'johndoe',
+    firstName: 'John',
+    lastName: 'Doe',
+    gender: 'male',
+    image: 'https://example.com/avatar.png',
+    accessToken: 'access-123',
+    refreshToken: 'refresh-456',
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
 describe('getUser', () => {
   it('fetches user by id and normalizes result', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawUser({ id: 5 }))
+    mockedGet.mockResolvedValue({ data: makeRawUser({ id: 5 }) })
 
     const result = await getUser(5)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${USERS_PATH}/5`), { signal: undefined })
+    expect(mockedGet).toHaveBeenCalledWith(
+      'https://api.test/users/5',
+      expect.objectContaining({
+        params: { select: 'firstName,lastName,company' },
+      }),
+    )
     expect(result).toEqual({
       id: 5,
       username: 'johndoe',
@@ -43,19 +72,20 @@ describe('getUser', () => {
     })
   })
 
-  it('passes signal to fetchJson', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawUser())
+  it('passes signal to request config', async () => {
+    mockedGet.mockResolvedValue({ data: makeRawUser() })
     const controller = new AbortController()
 
     await getUser(1, controller.signal)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${USERS_PATH}/1`), {
-      signal: controller.signal,
-    })
+    expect(mockedGet).toHaveBeenCalledWith(
+      expect.stringContaining('/1'),
+      expect.objectContaining({ signal: controller.signal }),
+    )
   })
 
   it('returns defaults for missing string fields', async () => {
-    mockedFetchJson.mockResolvedValue({ id: 2 })
+    mockedGet.mockResolvedValue({ data: { id: 2 } })
 
     const result = await getUser(2)
 
@@ -63,60 +93,79 @@ describe('getUser', () => {
     expect(result.firstName).toBe('')
     expect(result.lastName).toBe('')
   })
+})
 
-  it('returns fallback id=0 for missing id', async () => {
-    mockedFetchJson.mockResolvedValue({})
+describe('login', () => {
+  it('posts credentials and returns mapped UserLoginDto', async () => {
+    const raw = makeRawUserLogin({ username: 'alice', firstName: 'Alice' })
+    mockedPost.mockResolvedValue({ data: raw })
 
-    const result = await getUser(99)
+    const result = await login('alice', 'secret')
 
-    expect(result.id).toBe(0)
+    expect(mockedPost).toHaveBeenCalledWith('https://api.test/auth/login', {
+      username: 'alice',
+      password: 'secret',
+    })
+    expect(result.username).toBe('alice')
+    expect(result.firstName).toBe('Alice')
+    expect(result.accessToken).toBe('access-123')
+    expect(result.refreshToken).toBe('refresh-456')
   })
 
-  it('omits jobTitle and department when company is absent', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawUser({ company: undefined }))
+  it('returns defaults for missing raw fields', async () => {
+    mockedPost.mockResolvedValue({ data: { id: 1 } })
 
-    const result = await getUser(1)
+    const result = await login('x', 'y')
 
-    expect(result).not.toHaveProperty('jobTitle')
-    expect(result).not.toHaveProperty('department')
+    expect(result.username).toBe('')
+    expect(result.gender).toBe('other')
+    expect(result.image).toBe('')
   })
+})
 
-  it('omits jobTitle when company.title is not a string', async () => {
-    mockedFetchJson.mockResolvedValue(
-      makeRawUser({ company: { title: 123, department: 'Sales' } }),
+describe('refreshAuth', () => {
+  it('posts refresh token to /auth/refresh and returns tokens', async () => {
+    const payload = { accessToken: 'new-access', refreshToken: 'new-refresh' }
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(payload),
+    })
+
+    const result = await refreshAuth('old-refresh')
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/auth/refresh',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: 'old-refresh', expiresInMins: 30 }),
+      }),
     )
-
-    const result = await getUser(1)
-
-    expect(result).not.toHaveProperty('jobTitle')
-    expect(result.department).toBe('Sales')
+    expect(result).toEqual(payload)
   })
 
-  it('omits department when company.department is not a string', async () => {
-    mockedFetchJson.mockResolvedValue(
-      makeRawUser({ company: { title: 'Dev', department: null } }),
+  it('propagates fetch errors', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
+
+    await expect(refreshAuth('token')).rejects.toThrow('Network error')
+  })
+})
+
+describe('getAuthUser', () => {
+  it('gets /auth/me and returns mapped UserLoginDto', async () => {
+    const raw = makeRawUserLogin({ username: 'me', firstName: 'Current' })
+    mockedGet.mockResolvedValue({ data: raw })
+
+    const result = await getAuthUser()
+
+    expect(mockedGet).toHaveBeenCalledWith(
+      'https://api.test/auth/me',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      }),
     )
-
-    const result = await getUser(1)
-
-    expect(result.jobTitle).toBe('Dev')
-    expect(result).not.toHaveProperty('department')
-  })
-
-  it('handles company being a non-object gracefully', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawUser({ company: 'not-an-object' }))
-
-    const result = await getUser(1)
-
-    expect(result).not.toHaveProperty('jobTitle')
-    expect(result).not.toHaveProperty('department')
-  })
-
-  it('handles non-finite id with fallback', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawUser({ id: 'abc' }))
-
-    const result = await getUser(1)
-
-    expect(result.id).toBe(0)
+    expect(result.username).toBe('me')
+    expect(result.firstName).toBe('Current')
   })
 })
