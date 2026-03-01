@@ -10,32 +10,44 @@ import { toFiniteNumber } from '@/utils/number'
 const STORAGE_KEY = 'posts_list_store_state'
 const SEARCH_FIELDS: PostSearchField[] = ['title', 'body', 'userId']
 
+/** Лимит постов на одной странице списка (используется по умолчанию в store и при расчёте числа страниц). */
+export const POSTS_PAGE_LIMIT = 9
+
 const requestControllerRef = { current: null as AbortController | null }
 
 interface StoredPostsState {
   posts: PostDto[]
-  total: number
-  skip: number
   page: number
   query: string
   searchField: PostSearchField
+  total: number
+  totalPages: number
 }
 
 export const usePostsListStore = defineStore('postsList', {
   state: () => ({
     posts: [] as PostDto[],
-    total: 0,
-    skip: 0,
-    limit: 9,
+    limit: POSTS_PAGE_LIMIT,
     page: 1,
     query: '',
     searchField: 'title' as PostSearchField,
+    total: 0,
+    totalPages: 1,
     isLoading: false,
   }),
 
   getters: {
-    pagesAmount: (state) => Math.max(1, Math.ceil(state.total / state.limit)),
-    requiredSkipAmount: (state) => (state.page - 1) * state.limit,
+    /** Общее число страниц (из заголовка Link, rel="last", в ответе getPosts). */
+    pagesAmount(): number {
+      return Math.max(1, this.totalPages)
+    },
+    /** Смещение начала текущей страницы: (page - 1) * limit */
+    requiredSkipAmount(): number {
+      return (this.page - 1) * this.limit
+    },
+    skip(): number {
+      return this.requiredSkipAmount
+    },
   },
 
   actions: {
@@ -43,11 +55,11 @@ export const usePostsListStore = defineStore('postsList', {
       try {
         const stateToSave: StoredPostsState = {
           posts: this.posts,
-          total: this.total,
-          skip: this.skip,
           page: this.page,
           query: this.query,
           searchField: this.searchField,
+          total: this.total,
+          totalPages: this.totalPages,
         }
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
       } catch (error) {
@@ -63,10 +75,10 @@ export const usePostsListStore = defineStore('postsList', {
         const data = JSON.parse(raw) as Partial<StoredPostsState> & { posts?: unknown[] }
 
         this.posts = mapPostsListToDto(Array.isArray(data.posts) ? data.posts : [])
-        this.total = toFiniteNumber(data.total, 0)
-        this.skip = toFiniteNumber(data.skip, 0)
         this.page = toFiniteNumber(data.page, 1)
         this.query = typeof data.query === 'string' ? data.query : ''
+        this.total = toFiniteNumber(data.total, 0)
+        this.totalPages = toFiniteNumber(data.totalPages, 1)
 
         const restoredField = data.searchField
         this.searchField = SEARCH_FIELDS.includes(restoredField as PostSearchField)
@@ -82,7 +94,6 @@ export const usePostsListStore = defineStore('postsList', {
 
     async fetchPosts(options: { resetPage?: boolean } = {}) {
       const resetPage = options.resetPage ?? false
-      const requestSkip = resetPage ? 0 : this.skip
 
       if (requestControllerRef.current) {
         requestControllerRef.current.abort()
@@ -93,8 +104,8 @@ export const usePostsListStore = defineStore('postsList', {
       const signal = requestControllerRef.current.signal
       try {
         const data: PostResponseDto = await getPosts({
-          limit: this.limit,
-          skip: requestSkip,
+          _limit: this.limit,
+          _page: this.page,
           query: this.query,
           field: this.searchField,
           signal,
@@ -104,23 +115,20 @@ export const usePostsListStore = defineStore('postsList', {
         if (signal.aborted) return
 
         this.posts = data.posts
-        this.total = toFiniteNumber(data.total, 0)
+        this.total = data.total ?? data.posts.length
+        this.totalPages = data.totalPages ?? Math.max(1, Math.ceil(this.total / this.limit))
 
         if (resetPage) {
           this.page = 1
-          this.skip = 0
-        } else {
-          this.skip = toFiniteNumber(data.skip, requestSkip)
-          this.page = Math.floor(this.skip / this.limit) + 1
         }
 
         this.saveToStorage()
       } catch (error) {
         if (!isAbortError(error) && getHttpStatus(error) === 404 && this.searchField === 'userId') {
           this.posts = []
-          this.total = 0
-          this.skip = 0
           this.page = 1
+          this.total = 0
+          this.totalPages = 1
           this.saveToStorage()
         } else {
           throw error
@@ -139,7 +147,6 @@ export const usePostsListStore = defineStore('postsList', {
 
     async loadPage(page: number) {
       this.page = page
-      this.skip = this.requiredSkipAmount
       await this.fetchPosts()
     },
 
@@ -153,6 +160,7 @@ export const usePostsListStore = defineStore('postsList', {
       if (!post) return
       if (fields.title !== undefined) post.title = fields.title
       if (fields.body !== undefined) post.body = fields.body
+      this.saveToStorage()
     },
 
     async refreshPosts() {

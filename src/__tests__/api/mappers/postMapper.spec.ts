@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizePost, normalizePostList } from '@/api/mappers/postMapper'
+import { mapPostToDto, mapPostsListToDto } from '@/api/mappers/postMapper'
 
 const validRaw = {
   id: 1,
@@ -10,9 +10,9 @@ const validRaw = {
   reactions: { likes: 3, dislikes: 1 },
 }
 
-describe('normalizePost', () => {
+describe('mapPostToDto', () => {
   it('normalizes a complete raw post', () => {
-    const result = normalizePost(validRaw)
+    const result = mapPostToDto(validRaw)
 
     expect(result).toEqual({
       id: 1,
@@ -25,37 +25,37 @@ describe('normalizePost', () => {
   })
 
   it('does not include tags when absent', () => {
-    const result = normalizePost(validRaw)
+    const result = mapPostToDto(validRaw)
 
     expect(result).not.toHaveProperty('tags')
   })
 
   it('includes tags when present as string array', () => {
-    const result = normalizePost({ ...validRaw, tags: ['vue', 'ts'] })
+    const result = mapPostToDto({ ...validRaw, tags: ['vue', 'ts'] })
 
     expect(result.tags).toEqual(['vue', 'ts'])
   })
 
   it('filters out non-string values from tags', () => {
-    const result = normalizePost({ ...validRaw, tags: ['ok', 42, null, 'fine', true] })
+    const result = mapPostToDto({ ...validRaw, tags: ['ok', 42, null, 'fine', true] })
 
     expect(result.tags).toEqual(['ok', 'fine'])
   })
 
   it('does not include tags when array is empty', () => {
-    const result = normalizePost({ ...validRaw, tags: [] })
+    const result = mapPostToDto({ ...validRaw, tags: [] })
 
     expect(result).not.toHaveProperty('tags')
   })
 
   it('does not include tags when all elements are non-string', () => {
-    const result = normalizePost({ ...validRaw, tags: [1, 2, null] })
+    const result = mapPostToDto({ ...validRaw, tags: [1, 2, null] })
 
     expect(result).not.toHaveProperty('tags')
   })
 
   it('ignores tags when not an array', () => {
-    const result = normalizePost({ ...validRaw, tags: 'not-array' })
+    const result = mapPostToDto({ ...validRaw, tags: 'not-array' })
 
     expect(result).not.toHaveProperty('tags')
   })
@@ -63,71 +63,71 @@ describe('normalizePost', () => {
   // --- defaults for missing/invalid fields ---
 
   it('defaults id to 0 when missing', () => {
-    const result = normalizePost({ ...validRaw, id: undefined })
+    const result = mapPostToDto({ ...validRaw, id: undefined })
     expect(result.id).toBe(0)
   })
 
   it('defaults id to 0 when non-numeric', () => {
-    const result = normalizePost({ ...validRaw, id: 'bad' })
+    const result = mapPostToDto({ ...validRaw, id: 'bad' })
     expect(result.id).toBe(0)
   })
 
   it('defaults title to empty string when missing', () => {
-    const result = normalizePost({ ...validRaw, title: undefined })
+    const result = mapPostToDto({ ...validRaw, title: undefined })
     expect(result.title).toBe('')
   })
 
   it('defaults title to empty string when non-string', () => {
-    const result = normalizePost({ ...validRaw, title: 123 })
+    const result = mapPostToDto({ ...validRaw, title: 123 })
     expect(result.title).toBe('')
   })
 
   it('defaults body to empty string when missing', () => {
-    const result = normalizePost({ ...validRaw, body: undefined })
+    const result = mapPostToDto({ ...validRaw, body: undefined })
     expect(result.body).toBe('')
   })
 
   it('defaults body to empty string when non-string', () => {
-    const result = normalizePost({ ...validRaw, body: false })
+    const result = mapPostToDto({ ...validRaw, body: false })
     expect(result.body).toBe('')
   })
 
   it('defaults userId to 0 when missing', () => {
-    const result = normalizePost({ ...validRaw, userId: undefined })
+    const result = mapPostToDto({ ...validRaw, userId: undefined })
     expect(result.userId).toBe(0)
   })
 
   it('defaults views to 0 when non-finite', () => {
-    const result = normalizePost({ ...validRaw, views: Infinity })
+    const result = mapPostToDto({ ...validRaw, views: Infinity })
     expect(result.views).toBe(0)
   })
 
   // --- reactions ---
 
   it('defaults reactions.likes to 0 when missing', () => {
-    const result = normalizePost({ ...validRaw, reactions: { dislikes: 2 } })
+    const result = mapPostToDto({ ...validRaw, reactions: { dislikes: 2 } })
     expect(result.reactions.likes).toBe(0)
   })
 
   it('defaults reactions.dislikes to 0 when missing', () => {
-    const result = normalizePost({ ...validRaw, reactions: { likes: 5 } })
+    const result = mapPostToDto({ ...validRaw, reactions: { likes: 5 } })
     expect(result.reactions.dislikes).toBe(0)
   })
 
   it('defaults both reactions to 0 when reactions is undefined', () => {
-    const result = normalizePost({ ...validRaw, reactions: undefined })
+    const result = mapPostToDto({ ...validRaw, reactions: undefined })
     expect(result.reactions).toEqual({ likes: 0, dislikes: 0 })
   })
 
   it('defaults reactions to 0 when values are non-numeric', () => {
-    const result = normalizePost({ ...validRaw, reactions: { likes: 'many', dislikes: null } })
+    const result = mapPostToDto({ ...validRaw, reactions: { likes: 'many', dislikes: null } })
     expect(result.reactions).toEqual({ likes: 0, dislikes: 0 })
   })
 
   // --- edge cases for raw input ---
 
   it('returns defaults when raw is null', () => {
-    const result = normalizePost(null)
+    const result = mapPostToDto(null)
     expect(result).toEqual({
       id: 0,
       title: '',
@@ -139,7 +139,7 @@ describe('normalizePost', () => {
   })
 
   it('returns defaults when raw is undefined', () => {
-    const result = normalizePost(undefined)
+    const result = mapPostToDto(undefined)
     expect(result).toEqual({
       id: 0,
       title: '',
@@ -151,18 +151,18 @@ describe('normalizePost', () => {
   })
 
   it('returns defaults when raw is a number', () => {
-    const result = normalizePost(42)
+    const result = mapPostToDto(42)
     expect(result.id).toBe(0)
     expect(result.title).toBe('')
   })
 
   it('returns defaults when raw is a string', () => {
-    const result = normalizePost('hello')
+    const result = mapPostToDto('hello')
     expect(result.id).toBe(0)
   })
 
   it('returns defaults when raw is an empty object', () => {
-    const result = normalizePost({})
+    const result = mapPostToDto({})
     expect(result).toEqual({
       id: 0,
       title: '',
@@ -174,9 +174,9 @@ describe('normalizePost', () => {
   })
 })
 
-describe('normalizePostList', () => {
+describe('mapPostsListToDto', () => {
   it('normalizes an array of raw posts', () => {
-    const result = normalizePostList([
+    const result = mapPostsListToDto([
       { ...validRaw, id: 1, title: 'First' },
       { ...validRaw, id: 2, title: 'Second' },
     ])
@@ -189,11 +189,11 @@ describe('normalizePostList', () => {
   })
 
   it('returns empty array for empty input', () => {
-    expect(normalizePostList([])).toEqual([])
+    expect(mapPostsListToDto([])).toEqual([])
   })
 
   it('handles mixed valid and invalid entries', () => {
-    const result = normalizePostList([validRaw, null, 'bad', {}])
+    const result = mapPostsListToDto([validRaw, null, 'bad', {}])
 
     expect(result).toHaveLength(4)
     expect(result[0]!.id).toBe(1)

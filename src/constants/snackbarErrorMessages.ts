@@ -6,3 +6,5 @@ export const SNACKBAR_ERROR_PROFILE_LOAD_FAILED = 'Ошибка загрузки
 export const SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED = 'Ошибка загрузки списка постов'
 export const SNACKBAR_ERROR_POST_LOAD_FAILED = 'Ошибка загрузки поста'
 export const SNACKBAR_ERROR_POST_SAVE_FAILED = 'Ошибка сохранения изменений'
+export const SNACKBAR_ERROR_LOGIN_INVALID_CREDENTIALS = 'Неправильный логин или пароль'
+export const SNACKBAR_ERROR_LOGIN_FAILED = 'Не удалось авторизоваться'

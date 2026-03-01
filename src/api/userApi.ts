@@ -13,7 +13,6 @@ import type { UserLoginDto } from '@/dto/user/userLoginDto'
 
 const USERS_BASE_URL = apiConfig.usersBaseUrl
 const AUTH_BASE_URL = apiConfig.authBaseUrl
-const AUTH_REFRESH_URL = `${apiConfig.baseUrl ?? ''}/auth/refresh`
 
 /** Получить пользователя по id (GET /users/:userId) */
 export async function getUser(userId: number, signal?: AbortSignal): Promise<UserDto> {
@@ -38,7 +37,7 @@ export async function login(username: string, password: string): Promise<UserLog
  * Вызывается без Authorization — через fetch, чтобы не зависеть от interceptor.
  */
 export async function refreshAuth(refreshToken: string): Promise<RefreshResponseDto> {
-  const response = await fetch(AUTH_REFRESH_URL, {
+  const response = await fetch(`${AUTH_BASE_URL}/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken, expiresInMins: 30 }),

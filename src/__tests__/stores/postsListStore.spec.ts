@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { usePostsListStore } from '@/stores/postsListStore'
+import { usePostsListStore, POSTS_PAGE_LIMIT } from '@/stores/postsListStore'
 
 vi.mock('@/api/postApi', () => ({
   getPosts: vi.fn(),
 }))
 
 vi.mock('@/api/mappers/postMapper', () => ({
-  normalizePostList: vi.fn((raw: unknown[]) => raw),
+  mapPostsListToDto: vi.fn((raw: unknown[]) => raw as PostDto[]),
 }))
 
 import { getPosts } from '@/api/postApi'
@@ -20,8 +20,8 @@ function makePost(id: number, title = 'Post'): PostDto {
   return { id, title, body: 'body', userId: 1, views: 0, reactions: { likes: 0, dislikes: 0 } }
 }
 
-function makeResponse(posts: PostDto[], total: number, skip = 0, limit = 9): PostResponseDto {
-  return { posts, total, skip, limit }
+function makeResponse(posts: PostDto[]): PostResponseDto {
+  return { posts }
 }
 
 const mockSessionStorage: Record<string, string> = {}
@@ -56,8 +56,9 @@ describe('postsListStore', () => {
 
       expect(store.posts).toEqual([])
       expect(store.total).toBe(0)
+      expect(store.totalPages).toBe(1)
       expect(store.skip).toBe(0)
-      expect(store.limit).toBe(9)
+      expect(store.limit).toBe(POSTS_PAGE_LIMIT)
       expect(store.page).toBe(1)
       expect(store.query).toBe('')
       expect(store.searchField).toBe('title')
@@ -73,15 +74,14 @@ describe('postsListStore', () => {
 
     it('pagesAmount calculates correctly', () => {
       const store = usePostsListStore()
-      store.total = 25
-      store.limit = 9
+      store.totalPages = 3
       expect(store.pagesAmount).toBe(3)
     })
 
     it('requiredSkipAmount calculates from page and limit', () => {
       const store = usePostsListStore()
       store.page = 3
-      store.limit = 9
+      store.limit = POSTS_PAGE_LIMIT
       expect(store.requiredSkipAmount).toBe(18)
     })
   })
@@ -90,13 +90,25 @@ describe('postsListStore', () => {
     it('fetches posts and updates state', async () => {
       const store = usePostsListStore()
       const posts = [makePost(1), makePost(2)]
-      mockedGetPosts.mockResolvedValue(makeResponse(posts, 20, 0, 9))
+      mockedGetPosts.mockResolvedValue(makeResponse(posts))
 
       await store.fetchPosts()
 
       expect(store.posts).toEqual(posts)
-      expect(store.total).toBe(20)
+      expect(store.total).toBe(posts.length)
       expect(store.isLoading).toBe(false)
+    })
+
+    it('uses total and totalPages from API (e.g. X-Total-Count and Link) when provided', async () => {
+      const store = usePostsListStore()
+      const posts = [makePost(1)]
+      mockedGetPosts.mockResolvedValue({ posts, total: 100, totalPages: 12 })
+
+      await store.fetchPosts()
+
+      expect(store.posts).toEqual(posts)
+      expect(store.total).toBe(100)
+      expect(store.totalPages).toBe(12)
     })
 
     it('sets isLoading true during fetch', async () => {
@@ -104,7 +116,7 @@ describe('postsListStore', () => {
       let loadingDuringFetch = false
       mockedGetPosts.mockImplementation(() => {
         loadingDuringFetch = store.isLoading
-        return Promise.resolve(makeResponse([], 0))
+        return Promise.resolve(makeResponse([]))
       })
 
       await store.fetchPosts()
@@ -116,8 +128,7 @@ describe('postsListStore', () => {
     it('resets page to 1 when resetPage is true', async () => {
       const store = usePostsListStore()
       store.page = 3
-      store.skip = 18
-      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)], 10, 0, 9))
+      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)]))
 
       await store.fetchPosts({ resetPage: true })
 
@@ -125,9 +136,10 @@ describe('postsListStore', () => {
       expect(store.skip).toBe(0)
     })
 
-    it('calculates page from skip when resetPage is false', async () => {
+    it('keeps page when resetPage is false', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)], 30, 18, 9))
+      store.page = 3
+      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)]))
 
       await store.fetchPosts()
 
@@ -141,7 +153,7 @@ describe('postsListStore', () => {
 
       mockedGetPosts.mockImplementation(async (params) => {
         abortCalls.push(params.signal!)
-        return makeResponse([], 0)
+        return makeResponse([])
       })
 
       const p1 = store.fetchPosts()
@@ -154,20 +166,21 @@ describe('postsListStore', () => {
     it('saves to sessionStorage after successful fetch', async () => {
       const store = usePostsListStore()
       const posts = [makePost(1)]
-      mockedGetPosts.mockResolvedValue(makeResponse(posts, 1))
+      mockedGetPosts.mockResolvedValue({ posts, totalPages: 1 })
 
       await store.fetchPosts()
 
       expect(sessionStorageMock.setItem).toHaveBeenCalledTimes(1)
       expect(sessionStorageMock.setItem).toHaveBeenCalledWith('posts_list_store_state', expect.any(String))
-      const stored = JSON.parse(sessionStorageMock.setItem.mock.calls[0]![1]) as { posts: unknown[]; total: number }
+      const stored = JSON.parse(sessionStorageMock.setItem.mock.calls[0]![1]) as { posts: unknown[]; total: number; totalPages: number }
       expect(stored.posts).toHaveLength(1)
       expect(stored.total).toBe(1)
+      expect(stored.totalPages).toBe(1)
     })
 
     it('catches and logs when sessionStorage.setItem throws', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)], 1))
+      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)]))
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       sessionStorageMock.setItem.mockImplementationOnce(() => {
         throw new Error('QuotaExceeded')
@@ -191,7 +204,7 @@ describe('postsListStore', () => {
           capturedSignal = params.signal
           await new Promise((r) => setTimeout(r, 50))
         }
-        return makeResponse([makePost(1)], 1)
+        return makeResponse([makePost(1)])
       })
 
       const p1 = store.fetchPosts()
@@ -202,6 +215,7 @@ describe('postsListStore', () => {
       expect(capturedSignal!.aborted).toBe(true)
       expect(store.posts).toEqual([makePost(1)])
       expect(store.total).toBe(1)
+      expect(store.totalPages).toBe(1)
     })
 
     it('handles fetch errors by rethrowing', async () => {
@@ -225,6 +239,7 @@ describe('postsListStore', () => {
 
       expect(store.posts).toEqual([])
       expect(store.total).toBe(0)
+      expect(store.totalPages).toBe(1)
       expect(store.skip).toBe(0)
       expect(store.page).toBe(1)
       expect(sessionStorageMock.setItem).toHaveBeenCalled()
@@ -245,7 +260,11 @@ describe('postsListStore', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockedGetPosts.mockRejectedValue(new DOMException('Aborted', 'AbortError'))
 
-      await store.fetchPosts()
+      try {
+        await store.fetchPosts()
+      } catch {
+        // expected rejection
+      }
 
       expect(consoleSpy).not.toHaveBeenCalled()
       consoleSpy.mockRestore()
@@ -255,7 +274,7 @@ describe('postsListStore', () => {
   describe('searchPosts', () => {
     it('sets query, searchField and fetches with resetPage', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([], 0))
+      mockedGetPosts.mockResolvedValue(makeResponse([]))
 
       await store.searchPosts('hello', 'body')
 
@@ -267,7 +286,7 @@ describe('postsListStore', () => {
 
     it('trims the query', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([], 0))
+      mockedGetPosts.mockResolvedValue(makeResponse([]))
 
       await store.searchPosts('  test  ')
 
@@ -277,7 +296,7 @@ describe('postsListStore', () => {
     it('keeps existing searchField when none provided', async () => {
       const store = usePostsListStore()
       store.searchField = 'userId'
-      mockedGetPosts.mockResolvedValue(makeResponse([], 0))
+      mockedGetPosts.mockResolvedValue(makeResponse([]))
 
       await store.searchPosts('42')
 
@@ -286,14 +305,17 @@ describe('postsListStore', () => {
   })
 
   describe('loadPage', () => {
-    it('sets page and skip, then fetches', async () => {
+    it('sets page and fetches', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([], 0, 18, 9))
+      mockedGetPosts.mockResolvedValue(makeResponse([]))
 
       await store.loadPage(3)
 
       expect(store.page).toBe(3)
+      expect(store.skip).toBe(18)
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
+      const callParams = mockedGetPosts.mock.calls[0]![0]
+      expect(callParams._page).toBe(3)
     })
   })
 
@@ -318,7 +340,7 @@ describe('postsListStore', () => {
 
     it('fetches when storage is empty', async () => {
       const store = usePostsListStore()
-      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)], 1))
+      mockedGetPosts.mockResolvedValue(makeResponse([makePost(1)]))
 
       await store.ensurePostsLoaded()
 
@@ -337,7 +359,7 @@ describe('postsListStore', () => {
       const saved = {
         posts: [makePost(5, 'Saved')],
         total: 10,
-        skip: 9,
+        totalPages: 2,
         page: 2,
         query: 'test',
         searchField: 'body',
@@ -348,6 +370,7 @@ describe('postsListStore', () => {
 
       expect(result).toBe(true)
       expect(store.total).toBe(10)
+      expect(store.totalPages).toBe(2)
       expect(store.page).toBe(2)
       expect(store.query).toBe('test')
       expect(store.searchField).toBe('body')
@@ -358,6 +381,7 @@ describe('postsListStore', () => {
       mockSessionStorage['posts_list_store_state'] = JSON.stringify({
         posts: 'not-array',
         total: 'bad',
+        totalPages: 'bad',
         page: null,
         query: 123,
         searchField: 'invalid',
@@ -367,6 +391,7 @@ describe('postsListStore', () => {
 
       expect(store.posts).toEqual([])
       expect(store.total).toBe(0)
+      expect(store.totalPages).toBe(1)
       expect(store.page).toBe(1)
       expect(store.query).toBe('')
       expect(store.searchField).toBe('title')
@@ -411,20 +436,38 @@ describe('postsListStore', () => {
 
       expect(store.posts[0]!.title).toBe('Post')
     })
+
+    it('saves to sessionStorage after updating post', () => {
+      const store = usePostsListStore()
+      store.posts = [makePost(1, 'Old'), makePost(2, 'Other')]
+      store.page = 1
+      store.query = 'test'
+      store.searchField = 'title'
+      store.total = 2
+      store.totalPages = 1
+
+      store.updatePostInList(1, { title: 'New', body: 'Updated body' })
+
+      expect(sessionStorageMock.setItem).toHaveBeenCalledWith('posts_list_store_state', expect.any(String))
+      const stored = JSON.parse(sessionStorageMock.setItem.mock.calls[0]![1]) as { posts: { id: number; title: string; body: string }[] }
+      expect(stored.posts).toHaveLength(2)
+      expect(stored.posts[0]!.title).toBe('New')
+      expect(stored.posts[0]!.body).toBe('Updated body')
+    })
   })
 
   describe('refreshPosts', () => {
     it('fetches without resetting page', async () => {
       const store = usePostsListStore()
       store.page = 3
-      store.skip = 18
-      mockedGetPosts.mockResolvedValue(makeResponse([], 0, 18, 9))
+      mockedGetPosts.mockResolvedValue(makeResponse([]))
 
       await store.refreshPosts()
 
+      expect(store.page).toBe(3)
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
       const callParams = mockedGetPosts.mock.calls[0]![0]
-      expect(callParams.skip).toBe(18)
+      expect(callParams._page).toBe(3)
     })
   })
 })

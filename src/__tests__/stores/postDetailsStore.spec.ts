@@ -23,6 +23,24 @@ const mockedGetPostComments = vi.mocked(getPostComments)
 const mockedPatchPost = vi.mocked(patchPost)
 const mockedGetUser = vi.mocked(getUser)
 
+const mockSessionStorage: Record<string, string> = {}
+const sessionStorageMock = {
+  getItem: vi.fn((key: string) => mockSessionStorage[key] ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    mockSessionStorage[key] = value
+  }),
+  removeItem: vi.fn((key: string) => {
+    delete mockSessionStorage[key]
+  }),
+  clear: vi.fn(() => {
+    for (const k of Object.keys(mockSessionStorage)) delete mockSessionStorage[k]
+  }),
+  get length() {
+    return Object.keys(mockSessionStorage).length
+  },
+  key: vi.fn(() => null),
+}
+
 function makePost(id: number, title = 'Post', body = 'Body'): PostDto {
   return { id, title, body, userId: 10, views: 100, reactions: { likes: 1, dislikes: 0 } }
 }
@@ -31,8 +49,12 @@ function makeUser(id: number) {
   return { id, username: 'user', firstName: 'First', lastName: 'Last' }
 }
 
+const EDITED_POST_IDS_KEY = 'post_details_edited_ids'
+
 beforeEach(() => {
   vi.clearAllMocks()
+  for (const k of Object.keys(mockSessionStorage)) delete mockSessionStorage[k]
+  Object.defineProperty(globalThis, 'sessionStorage', { value: sessionStorageMock, writable: true })
   setActivePinia(createPinia())
 })
 
@@ -46,7 +68,54 @@ describe('postDetailsStore', () => {
       expect(store.postDetailsCache).toEqual([])
       expect(store.originalTitle).toBe('')
       expect(store.originalBody).toBe('')
-      expect(store.modalSkip).toBe(0)
+      expect(store.modalPostPosition).toBe(0)
+      expect(store.editedPostIds).toEqual([])
+    })
+  })
+
+  describe('editedPostIds from sessionStorage (getEditedPostIdsFromStorage)', () => {
+    it('initializes editedPostIds to empty array when key is missing', () => {
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([])
+    })
+
+    it('initializes editedPostIds from valid JSON array of numbers', () => {
+      mockSessionStorage[EDITED_POST_IDS_KEY] = '[1, 5, 10]'
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([1, 5, 10])
+    })
+
+    it('filters out non-number elements from stored array', () => {
+      mockSessionStorage[EDITED_POST_IDS_KEY] = '[1, "two", 3, null, 7, true]'
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([1, 3, 7])
+    })
+
+    it('initializes to empty array when stored value is not an array', () => {
+      mockSessionStorage[EDITED_POST_IDS_KEY] = '{"ids": [1,2]}'
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([])
+    })
+
+    it('initializes to empty array when stored value is invalid JSON', () => {
+      mockSessionStorage[EDITED_POST_IDS_KEY] = 'not json'
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([])
+    })
+
+    it('initializes to empty array when getItem throws', () => {
+      const originalGetItem = sessionStorageMock.getItem
+      sessionStorageMock.getItem = vi.fn(() => {
+        throw new Error('Storage unavailable')
+      })
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+      expect(store.editedPostIds).toEqual([])
+      sessionStorageMock.getItem = originalGetItem
     })
   })
 
@@ -146,6 +215,25 @@ describe('postDetailsStore', () => {
 
       expect(store.hasUnsavedChanges).toBe(true)
     })
+
+    it('modalPostWasEdited returns false when no post requested', () => {
+      const store = usePostDetailsStore()
+      expect(store.modalPostWasEdited).toBe(false)
+    })
+
+    it('modalPostWasEdited returns false when postId not in editedPostIds', () => {
+      const store = usePostDetailsStore()
+      store.modalRequestedPostId = 5
+      store.editedPostIds = [1, 2, 3]
+      expect(store.modalPostWasEdited).toBe(false)
+    })
+
+    it('modalPostWasEdited returns true when postId is in editedPostIds', () => {
+      const store = usePostDetailsStore()
+      store.modalRequestedPostId = 2
+      store.editedPostIds = [1, 2, 3]
+      expect(store.modalPostWasEdited).toBe(true)
+    })
   })
 
   describe('snapshotOriginal', () => {
@@ -206,7 +294,7 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockResolvedValue(user)
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      await store.loadPostForModal(0, 5)
+      await store.loadPostForModal(1, 5)
 
       expect(store.modalRequestedPostId).toBe(5)
       expect(store.postDetailsCache).toHaveLength(1)
@@ -219,36 +307,34 @@ describe('postDetailsStore', () => {
       const post = makePost(5, 'Cached')
       store.postDetailsCache = [{ post, user: null, comments: [] }]
 
-      await store.loadPostForModal(0, 5)
+      await store.loadPostForModal(1, 5)
 
       expect(mockedGetPostById).not.toHaveBeenCalled()
       expect(store.modalRequestedPostId).toBe(5)
     })
 
-    it('loads post by skip (navigation) when postId is not provided', async () => {
+    it('loads post by position (navigation) when postId is not provided', async () => {
       const store = usePostDetailsStore()
-      const post = makePost(7, 'By skip')
+      const post = makePost(7, 'By position')
       mockedGetPosts.mockResolvedValue({
         posts: [post],
         total: 10,
-        skip: 3,
-        limit: 1,
       })
       mockedGetUser.mockResolvedValue(makeUser(10))
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      await store.loadPostForModal(3, undefined, { query: '', field: 'title' })
+      await store.loadPostForModal(4, undefined, { query: '', field: 'title' })
 
       expect(store.modalRequestedPostId).toBe(7)
-      expect(store.modalSkip).toBe(3)
+      expect(store.modalPostPosition).toBe(4)
     })
 
-    it('uses cache by skip when available', async () => {
+    it('uses cache by position when available', async () => {
       const store = usePostDetailsStore()
-      const post = makePost(7, 'Cached by skip')
-      store.postDetailsCache = [{ post, user: null, comments: [], skip: 3 }]
+      const post = makePost(7, 'Cached by position')
+      store.postDetailsCache = [{ post, user: null, comments: [], position: 4 }]
 
-      await store.loadPostForModal(3)
+      await store.loadPostForModal(4)
 
       expect(mockedGetPosts).not.toHaveBeenCalled()
       expect(store.modalRequestedPostId).toBe(7)
@@ -256,7 +342,7 @@ describe('postDetailsStore', () => {
 
     it('handles case when API returns no posts', async () => {
       const store = usePostDetailsStore()
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 1 })
+      mockedGetPosts.mockResolvedValue({ posts: [], totalPages: 1 })
 
       await store.loadPostForModal(99)
 
@@ -275,8 +361,8 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockResolvedValue(makeUser(1))
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      const p1 = store.loadPostForModal(0, 1)
-      const p2 = store.loadPostForModal(1, 2)
+      const p1 = store.loadPostForModal(1, 1)
+      const p2 = store.loadPostForModal(2, 2)
       await Promise.all([p1, p2])
 
       expect(signals[0]!.aborted).toBe(true)
@@ -289,7 +375,7 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockRejectedValue(new Error('User not found'))
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       expect(store.postDetailsCache[0]!.user).toBeNull()
       expect(consoleSpy).toHaveBeenCalledWith('Error fetching user:', expect.any(Error))
@@ -303,7 +389,7 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockResolvedValue(makeUser(1))
       mockedGetPostComments.mockRejectedValue(new Error('Comments error'))
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       expect(store.postDetailsCache[0]!.comments).toEqual([])
       expect(consoleSpy).toHaveBeenCalledWith('Error fetching comments:', expect.any(Error))
@@ -317,7 +403,7 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockRejectedValue(new DOMException('Aborted', 'AbortError'))
       mockedGetPostComments.mockRejectedValue(new DOMException('Aborted', 'AbortError'))
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       const nonAbortErrors = consoleSpy.mock.calls.filter(
         (call) => !(call[1] instanceof DOMException && (call[1] as DOMException).name === 'AbortError'),
@@ -331,7 +417,7 @@ describe('postDetailsStore', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockedGetPostById.mockRejectedValue(new Error('Network error'))
 
-      await expect(store.loadPostForModal(0, 1)).rejects.toThrow('Network error')
+      await expect(store.loadPostForModal(1, 1)).rejects.toThrow('Network error')
       expect(store.modalPostLoading).toBe(false)
       expect(consoleSpy).toHaveBeenCalledWith('Error fetching post:', expect.any(Error))
       consoleSpy.mockRestore()
@@ -346,7 +432,7 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockResolvedValue(makeUser(1))
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       expect(store.postDetailsCache).toHaveLength(0)
     })
@@ -358,7 +444,7 @@ describe('postDetailsStore', () => {
       mockedGetPostById.mockResolvedValue(post)
       mockedGetPostComments.mockResolvedValue({ comments: [] })
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       expect(mockedGetUser).not.toHaveBeenCalled()
       expect(store.postDetailsCache[0]!.user).toBeNull()
@@ -370,19 +456,17 @@ describe('postDetailsStore', () => {
       mockedGetUser.mockResolvedValue(makeUser(1))
       mockedGetPostComments.mockResolvedValue({} as unknown as import('@/api/postApi').PostCommentsResponseDto)
 
-      await store.loadPostForModal(0, 1)
+      await store.loadPostForModal(1, 1)
 
       expect(store.postDetailsCache[0]!.comments).toEqual([])
     })
 
-    it('uses searchContext defaults when not provided (load by skip)', async () => {
+    it('uses searchContext defaults when not provided (load by position)', async () => {
       const store = usePostDetailsStore()
       const post = makePost(7)
       mockedGetPosts.mockResolvedValue({
         posts: [post],
-        total: 10,
-        skip: 2,
-        limit: 1,
+        totalPages: 1,
       })
       mockedGetUser.mockResolvedValue(makeUser(10))
       mockedGetPostComments.mockResolvedValue({ comments: [] })
@@ -392,8 +476,8 @@ describe('postDetailsStore', () => {
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
       const callArg = mockedGetPosts.mock.calls[0]![0]
       expect(callArg).toMatchObject({
-        limit: 1,
-        skip: 2,
+        _limit: 1,
+        _page: 2,
         query: '',
         field: 'title',
       })
@@ -405,13 +489,13 @@ describe('postDetailsStore', () => {
       const store = usePostDetailsStore()
       store.modalRequestedPostId = 5
       store.modalPostLoading = true
-      store.modalSkip = 3
+      store.modalPostPosition = 3
 
       store.clearModalPost()
 
       expect(store.modalRequestedPostId).toBeNull()
       expect(store.modalPostLoading).toBe(false)
-      expect(store.modalSkip).toBe(0)
+      expect(store.modalPostPosition).toBe(0)
     })
 
     it('aborts in-flight request when called during load', async () => {
@@ -419,7 +503,7 @@ describe('postDetailsStore', () => {
       mockedGetPostById.mockImplementation(() => new Promise(() => {}))
       const abortSpy = vi.spyOn(AbortController.prototype, 'abort')
 
-      store.loadPostForModal(0, 1)
+      store.loadPostForModal(1, 1)
       await Promise.resolve()
       store.clearModalPost()
 
@@ -486,7 +570,7 @@ describe('postDetailsStore', () => {
     it('calls patchPost and updates cache entry', async () => {
       const store = usePostDetailsStore()
       const post = makePost(1, 'Old')
-      store.postDetailsCache = [{ post, user: null, comments: [], skip: 0 }]
+      store.postDetailsCache = [{ post, user: null, comments: [], position: 1 }]
       const updated = makePost(1, 'Updated')
       mockedPatchPost.mockResolvedValue(updated)
 
@@ -494,6 +578,21 @@ describe('postDetailsStore', () => {
 
       expect(result).toEqual(updated)
       expect(store.postDetailsCache[0]!.post.title).toBe('Updated')
+    })
+
+    it('adds postId to editedPostIds and saves to sessionStorage on success', async () => {
+      const store = usePostDetailsStore()
+      store.postDetailsCache = [{ post: makePost(7), user: null, comments: [] }]
+      const updated = makePost(7, 'Edited')
+      mockedPatchPost.mockResolvedValue(updated)
+
+      await store.updateModalPost(7, { title: 'Edited' })
+
+      expect(store.editedPostIds).toContain(7)
+      expect(sessionStorageMock.setItem).toHaveBeenCalledWith(
+        'post_details_edited_ids',
+        JSON.stringify([7]),
+      )
     })
 
     it('rethrows on error', async () => {
@@ -511,7 +610,11 @@ describe('postDetailsStore', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockedPatchPost.mockRejectedValue(new DOMException('Aborted', 'AbortError'))
 
-      await store.updateModalPost(1, { title: 'X' })
+      try {
+        await store.updateModalPost(1, { title: 'X' })
+      } catch {
+        // expected rejection
+      }
 
       expect(consoleSpy).not.toHaveBeenCalled()
       consoleSpy.mockRestore()

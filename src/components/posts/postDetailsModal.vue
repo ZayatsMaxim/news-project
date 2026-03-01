@@ -154,6 +154,14 @@ async function goToNextPost() {
             />
           </template>
           <div class="d-flex align-center ga-1 flex-shrink-0">
+            <v-chip
+              v-if="post && !showModalSkeleton && postDetailsStore.modalPostWasEdited"
+              size="small"
+              variant="tonal"
+              color="primary"
+            >
+              Отредактировано
+            </v-chip>
             <v-btn
               v-if="post && !showModalSkeleton"
               :icon="isEditing ? 'mdi-undo' : 'mdi-pencil'"
@@ -234,17 +242,19 @@ async function goToNextPost() {
           </div>
           <v-card-text v-if="postDetailsStore.modalComments.length" class="comments-block pt-3">
             <div class="font-weight-bold mb-2 text-body-1">Комментарии</div>
-            <div
-              v-for="comment in postDetailsStore.modalComments"
-              :key="comment.id"
-              class="py-2 comment-item-border"
-            >
-              <div class="text-caption text-medium-emphasis mb-1">{{ comment.user.username }}</div>
-              <div class="text-body-2">{{ comment.body }}</div>
-              <span class="d-inline-flex align-center ga-1 text-caption text-medium-emphasis mt-1">
-                <v-icon icon="mdi-thumb-up-outline" size="16" />
-                {{ comment.likes }}
-              </span>
+            <div class="comments-list">
+              <div
+                v-for="comment in postDetailsStore.modalComments"
+                :key="comment.id"
+                class="py-2 comment-item-border"
+              >
+                <div class="text-caption text-medium-emphasis mb-1">{{ comment.user.username }}</div>
+                <div class="text-body-2">{{ comment.body }}</div>
+                <span class="d-inline-flex align-center ga-1 text-caption text-medium-emphasis mt-1">
+                  <v-icon icon="mdi-thumb-up-outline" size="16" />
+                  {{ comment.likes }}
+                </span>
+              </div>
             </div>
           </v-card-text>
         </template>
@@ -330,6 +340,11 @@ async function goToNextPost() {
 
 .comments-block {
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.comments-list {
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .comment-item-border {

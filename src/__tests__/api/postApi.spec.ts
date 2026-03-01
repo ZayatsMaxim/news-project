@@ -1,25 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getPosts, getPostById, patchPost, getPostComments } from '@/api/postApi'
 
-/** Expected contract: path and default select so tests fail if production config drifts. */
-const POSTS_PATH = '/posts'
-const DEFAULT_SELECT = 'id,title,body,userId,reactions,views'
-
-vi.mock('@/api/httpClient', () => ({
-  fetchJson: vi.fn(),
-  fetchPatchJson: vi.fn(),
+vi.mock('@/api/axiosHttpClient', () => ({
+  apiClient: {
+    get: vi.fn(),
+    patch: vi.fn(),
+  },
 }))
 
-vi.mock('@/api/postLocalTitleSearch', () => ({
-  searchByTitleLocal: vi.fn(),
+vi.mock('@/config/api', () => ({
+  apiConfig: {
+    postsBaseUrl: 'https://api.test/posts',
+    commentsBaseUrl: 'https://api.test/comments',
+    postsSelect: 'id,title,body,userId,reactions,views',
+  },
 }))
 
-import { fetchJson, fetchPatchJson } from '@/api/httpClient'
-import { searchByTitleLocal } from '@/api/postLocalTitleSearch'
+const { getPosts, getPostById, patchPost, getPostComments } = await import('@/api/postApi')
+const { apiClient } = await import('@/api/axiosHttpClient')
 
-const mockedFetchJson = vi.mocked(fetchJson)
-const mockedFetchPatchJson = vi.mocked(fetchPatchJson)
-const mockedSearchLocal = vi.mocked(searchByTitleLocal)
+const mockedGet = vi.mocked(apiClient.get)
+const mockedPatch = vi.mocked(apiClient.patch)
 
 function makeRawPost(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,220 +33,193 @@ function makeRawPost(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function axiosResponse<T>(data: T, headers: Record<string, string> = {}) {
+  return { data, headers, status: 200, statusText: 'OK', config: {} }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-// --- getPosts ---
-
 describe('getPosts', () => {
-  it('fetches from base URL when query is empty', async () => {
-    mockedFetchJson.mockResolvedValue({
-      posts: [makeRawPost()],
-      total: 1,
-      skip: 0,
-      limit: 10,
+  it('calls GET with _limit and _page when query is empty', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([makeRawPost()]))
+
+    await getPosts({ _limit: 10, _page: 1 })
+
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts', {
+      signal: undefined,
+      params: { _page: 1, _limit: 10 },
+    })
+  })
+
+  it('passes title_like when field is title and query is set', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
+
+    await getPosts({ _limit: 10, _page: 1, query: 'hello', field: 'title' })
+
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts', {
+      signal: undefined,
+      params: { _page: 1, _limit: 10, title_like: 'hello' },
+    })
+  })
+
+  it('passes body_like when field is body', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
+
+    await getPosts({ _limit: 10, _page: 1, query: 'test query', field: 'body' })
+
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts', {
+      signal: undefined,
+      params: { _page: 1, _limit: 10, body_like: 'test query' },
+    })
+  })
+
+  it('passes userId when field is userId and query is numeric', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
+
+    await getPosts({ _limit: 10, _page: 1, query: '42', field: 'userId' })
+
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts', {
+      signal: undefined,
+      params: { _page: 1, _limit: 10, userId: '42' },
+    })
+  })
+
+  it('returns empty response for field userId with non-numeric query', async () => {
+    const result = await getPosts({
+      _limit: 10,
+      _page: 1,
+      query: 'abc',
+      field: 'userId',
     })
 
-    const result = await getPosts({ limit: 10, skip: 0 })
-
-    expect(mockedFetchJson).toHaveBeenCalledOnce()
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      signal?: AbortSignal
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(url).not.toContain('?')
-    expect(options.params).toEqual({ limit: 10, skip: 0, select: DEFAULT_SELECT })
-    expect(result.posts).toHaveLength(1)
-    expect(result.posts[0]!.id).toBe(1)
-    expect(result.total).toBe(1)
+    expect(mockedGet).not.toHaveBeenCalled()
+    expect(result).toEqual({ posts: [], totalPages: 1 })
   })
 
-  it('uses custom select param when provided', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 5 })
+  it('trims query before building params', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
 
-    await getPosts({ limit: 5, skip: 0, select: 'id,title' })
+    await getPosts({ _limit: 5, _page: 1, query: '  spaced  ', field: 'title' })
 
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(options.params).toMatchObject({ limit: 5, skip: 0, select: 'id,title' })
+    expect(mockedGet).toHaveBeenCalledWith(
+      'https://api.test/posts',
+      expect.objectContaining({
+        params: expect.objectContaining({ title_like: 'spaced' }),
+      }),
+    )
   })
 
-  it('delegates to searchByTitleLocal when field=title and query is set', async () => {
-    const localResult = { posts: [], total: 0, skip: 0, limit: 10 }
-    mockedSearchLocal.mockResolvedValue(localResult)
+  it('maps response array to PostDto and returns total from X-Total-Count', async () => {
+    mockedGet.mockResolvedValue(
+      axiosResponse([makeRawPost({ id: 1, title: 'A' }), makeRawPost({ id: 2, title: 'B' })], {
+        'x-total-count': '100',
+        link: '<https://api.test/posts?_page=10>; rel="last"',
+      }),
+    )
 
-    const result = await getPosts({ limit: 10, skip: 0, query: 'hello', field: 'title' })
-
-    expect(mockedSearchLocal).toHaveBeenCalledWith('hello', 0, 10, undefined)
-    expect(mockedFetchJson).not.toHaveBeenCalled()
-    expect(result).toBe(localResult)
-  })
-
-  it('fetches from /search endpoint when field=body', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 10 })
-
-    await getPosts({ limit: 10, skip: 0, query: 'test query', field: 'body' })
-
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('/search')
-    expect(options.params).toMatchObject({ q: 'test query', limit: 10, skip: 0 })
-  })
-
-  it('fetches from /user/:id endpoint when field=userId with numeric query', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 10 })
-
-    await getPosts({ limit: 10, skip: 0, query: '42', field: 'userId' })
-
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(url).toContain('/user/42')
-    expect(options.params).toMatchObject({ limit: 10, skip: 0 })
-  })
-
-  it('returns empty response for field=userId with non-numeric query', async () => {
-    const result = await getPosts({ limit: 10, skip: 0, query: 'abc', field: 'userId' })
-
-    expect(mockedFetchJson).not.toHaveBeenCalled()
-    expect(mockedSearchLocal).not.toHaveBeenCalled()
-    expect(result).toEqual({ posts: [], total: 0, skip: 0, limit: 10 })
-  })
-
-  it('trims query before routing', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 5 })
-
-    await getPosts({ limit: 5, skip: 0, query: '  ', field: 'body' })
-
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(options.params).toMatchObject({ limit: 5, skip: 0 })
-  })
-
-  it('falls back to base URL for unknown search field (default branch)', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 5 })
-
-    await getPosts({
-      limit: 5,
-      skip: 0,
-      query: 'something',
-      field: 'unknown' as import('@/api/postApi').PostSearchField,
-    })
-
-    const url = mockedFetchJson.mock.calls[0]![0] as string
-    const options = mockedFetchJson.mock.calls[0]![1] as {
-      params?: Record<string, string | number>
-    }
-    expect(url).toContain(POSTS_PATH)
-    expect(options.params).toMatchObject({ limit: 5, skip: 0 })
-    expect(mockedSearchLocal).not.toHaveBeenCalled()
-  })
-
-  it('normalizes posts from raw response', async () => {
-    mockedFetchJson.mockResolvedValue({
-      posts: [makeRawPost({ id: 1, title: 'A' }), makeRawPost({ id: 2, title: 'B' })],
-      total: 2,
-      skip: 0,
-      limit: 10,
-    })
-
-    const result = await getPosts({ limit: 10, skip: 0 })
+    const result = await getPosts({ _limit: 10, _page: 1 })
 
     expect(result.posts).toHaveLength(2)
     expect(result.posts[0]!.title).toBe('A')
     expect(result.posts[1]!.title).toBe('B')
+    expect(result.total).toBe(100)
+    expect(result.totalPages).toBe(10)
   })
 
-  it('handles missing posts array in response gracefully', async () => {
-    mockedFetchJson.mockResolvedValue({ total: 0, skip: 0, limit: 10 })
+  it('returns totalPages from Link header when present', async () => {
+    mockedGet.mockResolvedValue(
+      axiosResponse([], {
+        link: '<https://api.test/posts?_page=5&_limit=9>; rel="last"',
+      }),
+    )
 
-    const result = await getPosts({ limit: 10, skip: 0 })
+    const result = await getPosts({ _limit: 9, _page: 1 })
 
-    expect(result.posts).toEqual([])
+    expect(result.totalPages).toBe(5)
   })
 
-  it('uses fallback for non-finite total/skip/limit', async () => {
-    mockedFetchJson.mockResolvedValue({
-      posts: [],
-      total: 'bad',
-      skip: null,
-      limit: undefined,
-    })
+  it('does not include total or totalPages when headers missing', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([makeRawPost()]))
 
-    const result = await getPosts({ limit: 7, skip: 0 })
+    const result = await getPosts({ _limit: 10, _page: 1 })
 
-    expect(result.total).toBe(0)
-    expect(result.skip).toBe(0)
-    expect(result.limit).toBe(7)
+    expect(result.posts).toHaveLength(1)
+    expect(result.total).toBeUndefined()
+    expect(result.totalPages).toBeUndefined()
   })
 
-  it('passes signal to fetchJson', async () => {
-    mockedFetchJson.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 5 })
+  it('ignores invalid X-Total-Count (non-numeric) and does not set total', async () => {
+    mockedGet.mockResolvedValue(
+      axiosResponse([makeRawPost()], { 'x-total-count': 'not-a-number' }),
+    )
+
+    const result = await getPosts({ _limit: 10, _page: 1 })
+
+    expect(result.posts).toHaveLength(1)
+    expect(result.total).toBeUndefined()
+  })
+
+  it('handles response with posts in object shape', async () => {
+    mockedGet.mockResolvedValue(
+      axiosResponse({ posts: [makeRawPost({ id: 7, title: 'From object' })] }),
+    )
+
+    const result = await getPosts({ _limit: 10, _page: 1 })
+
+    expect(result.posts).toHaveLength(1)
+    expect(result.posts[0]!.id).toBe(7)
+    expect(result.posts[0]!.title).toBe('From object')
+  })
+
+  it('passes signal to request', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
     const controller = new AbortController()
 
-    await getPosts({ limit: 5, skip: 0, signal: controller.signal })
+    await getPosts({ _limit: 5, _page: 1, signal: controller.signal })
 
-    expect(mockedFetchJson.mock.calls[0]![1]).toMatchObject({
-      signal: controller.signal,
-      params: { limit: 5, skip: 0, select: DEFAULT_SELECT },
-    })
+    expect(mockedGet).toHaveBeenCalledWith(
+      'https://api.test/posts',
+      expect.objectContaining({ signal: controller.signal }),
+    )
   })
 })
 
-// --- getPostById ---
-
 describe('getPostById', () => {
-  it('fetches a single post by id and normalizes it', async () => {
+  it('fetches post by id and maps to PostDto', async () => {
     const raw = makeRawPost({ id: 5, title: 'Single', tags: ['vue', 'ts'] })
-    mockedFetchJson.mockResolvedValue(raw)
+    mockedGet.mockResolvedValue(axiosResponse(raw))
 
     const result = await getPostById(5)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/5`), {
-      signal: undefined,
-    })
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts/5', { signal: undefined })
     expect(result.id).toBe(5)
     expect(result.title).toBe('Single')
     expect(result.tags).toEqual(['vue', 'ts'])
   })
 
-  it('passes signal to fetchJson', async () => {
-    mockedFetchJson.mockResolvedValue(makeRawPost())
+  it('passes signal', async () => {
+    mockedGet.mockResolvedValue(axiosResponse(makeRawPost()))
     const controller = new AbortController()
 
     await getPostById(1, controller.signal)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(expect.stringContaining(`${POSTS_PATH}/1`), {
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/posts/1', {
       signal: controller.signal,
     })
   })
 })
 
-// --- patchPost ---
-
 describe('patchPost', () => {
-  it('sends PATCH request and returns normalized post', async () => {
+  it('sends PATCH and returns mapped post', async () => {
     const raw = makeRawPost({ id: 3, title: 'Updated' })
-    mockedFetchPatchJson.mockResolvedValue(raw)
+    mockedPatch.mockResolvedValue(axiosResponse(raw))
 
     const result = await patchPost(3, { title: 'Updated' })
 
-    expect(mockedFetchPatchJson).toHaveBeenCalledWith(
-      expect.stringContaining(`${POSTS_PATH}/3`),
+    expect(mockedPatch).toHaveBeenCalledWith(
+      'https://api.test/posts/3',
       { title: 'Updated' },
       { signal: undefined },
     )
@@ -254,63 +227,64 @@ describe('patchPost', () => {
     expect(result.title).toBe('Updated')
   })
 
-  it('sends both title and body', async () => {
-    mockedFetchPatchJson.mockResolvedValue(makeRawPost())
+  it('sends title and body', async () => {
+    mockedPatch.mockResolvedValue(axiosResponse(makeRawPost()))
 
     await patchPost(1, { title: 'T', body: 'B' })
 
-    expect(mockedFetchPatchJson.mock.calls[0]![1]).toEqual({ title: 'T', body: 'B' })
+    expect(mockedPatch.mock.calls[0]![1]).toEqual({ title: 'T', body: 'B' })
   })
 
-  it('passes signal to fetchPatchJson', async () => {
-    mockedFetchPatchJson.mockResolvedValue(makeRawPost())
+  it('passes signal', async () => {
+    mockedPatch.mockResolvedValue(axiosResponse(makeRawPost()))
     const controller = new AbortController()
 
     await patchPost(1, { title: 'X' }, controller.signal)
 
-    expect(mockedFetchPatchJson.mock.calls[0]![2]).toEqual({ signal: controller.signal })
+    expect(mockedPatch.mock.calls[0]![2]).toEqual({ signal: controller.signal })
   })
 })
 
-// --- getPostComments ---
-
 describe('getPostComments', () => {
-  it('fetches comments for a post', async () => {
-    const response = {
-      comments: [
-        {
-          id: 1,
-          body: 'Nice',
-          postId: 5,
-          likes: 3,
-          user: { id: 1, username: 'u1', fullName: 'User 1' },
-        },
-      ],
-      total: 1,
-      skip: 0,
-      limit: 30,
-    }
-    mockedFetchJson.mockResolvedValue(response)
+  it('fetches comments by postId', async () => {
+    const comments = [
+      {
+        id: 1,
+        body: 'Nice',
+        postId: 5,
+        likes: 3,
+        user: { id: 1, username: 'u1', fullName: 'User 1' },
+      },
+    ]
+    mockedGet.mockResolvedValue(axiosResponse(comments))
 
     const result = await getPostComments(5)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(
-      expect.stringContaining(`${POSTS_PATH}/5/comments`),
-      { signal: undefined },
-    )
+    expect(mockedGet).toHaveBeenCalledWith('https://api.test/comments', {
+      signal: undefined,
+      params: { postId: 5 },
+    })
     expect(result.comments).toHaveLength(1)
     expect(result.comments[0]!.body).toBe('Nice')
   })
 
-  it('passes signal to fetchJson', async () => {
-    mockedFetchJson.mockResolvedValue({ comments: [] })
+  it('passes signal', async () => {
+    mockedGet.mockResolvedValue(axiosResponse([]))
     const controller = new AbortController()
 
     await getPostComments(1, controller.signal)
 
-    expect(mockedFetchJson).toHaveBeenCalledWith(
-      expect.stringContaining(`${POSTS_PATH}/1/comments`),
-      { signal: controller.signal },
+    expect(mockedGet).toHaveBeenCalledWith(
+      'https://api.test/comments',
+      expect.objectContaining({ signal: controller.signal, params: { postId: 1 } }),
     )
+  })
+
+  it('wraps non-array response in comments array', async () => {
+    mockedGet.mockResolvedValue(axiosResponse({ wrong: true }))
+
+    const result = await getPostComments(1)
+
+    expect(result.comments).toEqual([])
   })
 })

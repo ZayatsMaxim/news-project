@@ -1,10 +1,12 @@
 const baseUrl = import.meta.env.VITE_API_BASE_URL
+const authUrl = import.meta.env.VITE_API_AUTH_URL
 
 export const apiConfig = {
   baseUrl,
   postsBaseUrl: `${baseUrl}/posts`,
-  usersBaseUrl: `${baseUrl}/users`,
-  authBaseUrl: `${baseUrl}/auth`,
+  commentsBaseUrl: `${baseUrl}/comments`,
+  usersBaseUrl: `${authUrl}/users`,
+  authBaseUrl: authUrl,
   postsSelect: 'id,title,body,userId,reactions,views',
 } as const
 

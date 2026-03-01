@@ -22,11 +22,32 @@ export interface CachedPostDetails {
   post: PostDto
   user: UserDto | null
   comments: CommentDto[]
-  /** Заполняется при загрузке по skip (навигация влево/вправо) для поиска в кэше. */
-  skip?: number
+  /** Номер поста в списке (1-based). Для поиска в кэше при навигации влево/вправо. */
+  position?: number
 }
 
 const modalRequestControllerRef = { current: null as AbortController | null }
+
+const EDITED_POST_IDS_STORAGE_KEY = 'post_details_edited_ids'
+
+function getEditedPostIdsFromStorage(): number[] {
+  try {
+    const raw = sessionStorage.getItem(EDITED_POST_IDS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((id): id is number => typeof id === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+function saveEditedPostIdsToStorage(ids: number[]): void {
+  try {
+    sessionStorage.setItem(EDITED_POST_IDS_STORAGE_KEY, JSON.stringify(ids))
+  } catch (e) {
+    console.warn('Failed to save edited post ids to sessionStorage', e)
+  }
+}
 
 export const usePostDetailsStore = defineStore('postDetails', {
   state: () => ({
@@ -37,8 +58,10 @@ export const usePostDetailsStore = defineStore('postDetails', {
     /** Исходные значения полей поста для отката при отмене редактирования. */
     originalTitle: '',
     originalBody: '',
-    /** Skip текущего поста в виртуальном списке выдачи. Используется для навигации влево/вправо. */
-    modalSkip: 0,
+    /** Номер запрошенного поста в списке (1-based). 0 — модалка закрыта. */
+    modalPostPosition: 0,
+    /** Id постов, отредактированных в этой сессии (дублируется в sessionStorage). */
+    editedPostIds: getEditedPostIdsFromStorage(),
   }),
 
   getters: {
@@ -66,6 +89,12 @@ export const usePostDetailsStore = defineStore('postDetails', {
         (this.modalPost.title ?? '') !== this.originalTitle ||
         (this.modalPost.body ?? '') !== this.originalBody
       )
+    },
+
+    /** Пост в модалке был отредактирован в этой сессии (id хранится в sessionStorage). */
+    modalPostWasEdited(): boolean {
+      if (this.modalRequestedPostId == null) return false
+      return this.editedPostIds.includes(this.modalRequestedPostId)
     },
   },
 
@@ -98,28 +127,28 @@ export const usePostDetailsStore = defineStore('postDetails', {
     },
 
     /**
-     * Загружает пост в модалку: из кэша (по postId или по skip) или с API.
-     * @param skip — индекс поста в выдаче
-     * @param postId — если передан, открытие из списка (загрузка по id); иначе навигация по skip
+     * Загружает пост в модалку: из кэша (по postId или по позиции) или с API.
+     * @param position — номер поста в списке (1-based)
+     * @param postId — если передан, открытие из списка (загрузка по id); иначе навигация по позиции
      * @param searchContext — контекст текущего поиска (query/field), передаётся извне
      */
-    async loadPostForModal(skip: number, postId?: number, searchContext?: SearchContext) {
+    async loadPostForModal(position: number, postId?: number, searchContext?: SearchContext) {
       if (modalRequestControllerRef.current) {
         modalRequestControllerRef.current.abort()
       }
-      this.modalSkip = skip
+      this.modalPostPosition = position
       this.modalRequestedPostId = postId ?? null
       this.modalPostLoading = true
 
       const cached =
         postId != null
           ? this.postDetailsCache.find((c) => c.post.id === postId)
-          : this.postDetailsCache.find((c) => c.skip === skip)
+          : this.postDetailsCache.find((c) => c.position === position)
 
       if (cached) {
         if (postId != null && this.modalRequestedPostId !== postId) return
         this.modalRequestedPostId = cached.post.id
-        this.modalSkip = skip
+        this.modalPostPosition = position
         this.modalPostLoading = false
         modalRequestControllerRef.current = null
         return
@@ -137,8 +166,8 @@ export const usePostDetailsStore = defineStore('postDetails', {
           if (signal.aborted || this.modalRequestedPostId !== postId) return
         } else {
           const data = await getPosts({
-            limit: 1,
-            skip,
+            _limit: 1,
+            _page: position,
             query: searchContext?.query ?? '',
             field: searchContext?.field ?? 'title',
             signal,
@@ -172,9 +201,9 @@ export const usePostDetailsStore = defineStore('postDetails', {
           console.error('Error fetching comments:', commentsResult.reason)
         }
 
-        this.postDetailsCache.push({ post, user, comments, skip })
+        this.postDetailsCache.push({ post, user, comments, position })
         this.modalRequestedPostId = post.id
-        this.modalSkip = skip
+        this.modalPostPosition = position
       } catch (e) {
         if (!isAbortError(e)) {
           console.error('Error fetching post:', e)
@@ -199,7 +228,7 @@ export const usePostDetailsStore = defineStore('postDetails', {
       }
       this.modalRequestedPostId = null
       this.modalPostLoading = false
-      this.modalSkip = 0
+      this.modalPostPosition = 0
     },
 
     /** Очистить кэш деталей постов (вызывается при смене запроса/поля поиска в списке). */
@@ -222,9 +251,13 @@ export const usePostDetailsStore = defineStore('postDetails', {
               post: updated,
               user: prev.user,
               comments: prev.comments,
-              skip: prev.skip,
+              position: prev.position,
             }
           }
+        }
+        if (!this.editedPostIds.includes(postId)) {
+          this.editedPostIds.push(postId)
+          saveEditedPostIdsToStorage(this.editedPostIds)
         }
         return updated
       } catch (e) {

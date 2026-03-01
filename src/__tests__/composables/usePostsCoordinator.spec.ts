@@ -22,19 +22,17 @@ vi.mock('@/api/postLocalTitleSearch', () => ({
 }))
 
 vi.mock('@/api/mappers/postMapper', () => ({
-  normalizePostList: vi.fn((raw: unknown[]) => raw),
+  mapPostsListToDto: vi.fn((raw: unknown[]) => raw as import('@/dto/post/postDto').PostDto[]),
 }))
 
 import { getPosts, getPostById, getPostComments, patchPost } from '@/api/postApi'
 import { getUser } from '@/api/userApi'
-import { invalidateLocalPostsCache } from '@/api/postLocalTitleSearch'
 
 const mockedGetPosts = vi.mocked(getPosts)
 const mockedGetPostById = vi.mocked(getPostById)
 const mockedGetPostComments = vi.mocked(getPostComments)
 const mockedPatchPost = vi.mocked(patchPost)
 const mockedGetUser = vi.mocked(getUser)
-const mockedInvalidateCache = vi.mocked(invalidateLocalPostsCache)
 
 function makePost(id: number, title = 'Post', body = 'Body'): PostDto {
   return { id, title, body, userId: 10, views: 100, reactions: { likes: 1, dislikes: 0 } }
@@ -67,26 +65,26 @@ beforeEach(() => {
 
 describe('usePostsCoordinator', () => {
   describe('hasPrevPost', () => {
-    it('returns false when modalSkip is 0', () => {
+    it('returns false when modalPostPosition is 0', () => {
       const { hasPrevPost } = usePostsCoordinator()
       const detailsStore = usePostDetailsStore()
-      detailsStore.modalSkip = 0
+      detailsStore.modalPostPosition = 0
 
       expect(hasPrevPost.value).toBe(false)
     })
 
-    it('returns false when modalSkip is less than 0', () => {
+    it('returns false when modalPostPosition is 1', () => {
       const { hasPrevPost } = usePostsCoordinator()
       const detailsStore = usePostDetailsStore()
-      detailsStore.modalSkip = -1
+      detailsStore.modalPostPosition = 1
 
       expect(hasPrevPost.value).toBe(false)
     })
 
-    it('returns true when modalSkip > 0', () => {
+    it('returns true when modalPostPosition > 1', () => {
       const { hasPrevPost } = usePostsCoordinator()
       const detailsStore = usePostDetailsStore()
-      detailsStore.modalSkip = 3
+      detailsStore.modalPostPosition = 3
 
       expect(hasPrevPost.value).toBe(true)
     })
@@ -104,7 +102,7 @@ describe('usePostsCoordinator', () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
       listStore.total = 10
-      detailsStore.modalSkip = 9
+      detailsStore.modalPostPosition = 10
 
       expect(hasNextPost.value).toBe(false)
     })
@@ -114,17 +112,17 @@ describe('usePostsCoordinator', () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
       listStore.total = 10
-      detailsStore.modalSkip = 5
+      detailsStore.modalPostPosition = 5
 
       expect(hasNextPost.value).toBe(true)
     })
   })
 
   describe('openPostForModal', () => {
-    it('calls loadPostForModal with correct skip and search context', async () => {
+    it('calls loadPostForModal with correct position and search context', async () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
-      listStore.skip = 9
+      listStore.page = 2
       listStore.query = 'vue'
       listStore.searchField = 'title'
 
@@ -133,13 +131,13 @@ describe('usePostsCoordinator', () => {
 
       openPostForModal(42, 2)
 
-      expect(loadSpy).toHaveBeenCalledWith(11, 42, { query: 'vue', field: 'title' })
+      expect(loadSpy).toHaveBeenCalledWith(12, 42, { query: 'vue', field: 'title' })
     })
 
     it('returns promise that rejects when loadPostForModal throws', async () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
-      listStore.skip = 0
+      listStore.page = 1
       vi.spyOn(detailsStore, 'loadPostForModal').mockRejectedValue(new Error('Load failed'))
 
       const { openPostForModal } = usePostsCoordinator()
@@ -154,7 +152,7 @@ describe('usePostsCoordinator', () => {
       const detailsStore = usePostDetailsStore()
       detailsStore.postDetailsCache = [{ post: makePost(1), user: null, comments: [] }]
 
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [] })
       const { searchPosts } = usePostsCoordinator()
 
       await searchPosts('test', 'body')
@@ -172,7 +170,7 @@ describe('usePostsCoordinator', () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
       detailsStore.postDetailsCache = [{ post: makePost(1), user: null, comments: [] }]
-      mockedGetPosts.mockResolvedValue({ posts: [makePost(1)], total: 1, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [makePost(1)] })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('vue', 'title')
@@ -186,7 +184,7 @@ describe('usePostsCoordinator', () => {
       const callArg = mockedGetPosts.mock.calls[0]![0]
       expect(callArg.query).toBe('vue')
       expect(callArg.field).toBe('title')
-      expect(callArg.skip).toBe(0)
+      expect(callArg._page).toBe(1)
     })
 
     it('searches by body when field is "body"', async () => {
@@ -195,8 +193,6 @@ describe('usePostsCoordinator', () => {
       mockedGetPosts.mockResolvedValue({
         posts: [matchingPost],
         total: 1,
-        skip: 0,
-        limit: 9,
       })
 
       const { searchPosts } = usePostsCoordinator()
@@ -214,7 +210,7 @@ describe('usePostsCoordinator', () => {
 
     it('searches by userId when field is "userId"', async () => {
       const listStore = usePostsListStore()
-      mockedGetPosts.mockResolvedValue({ posts: [makePost(1)], total: 1, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [makePost(1)], total: 1 })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('42', 'userId')
@@ -228,7 +224,7 @@ describe('usePostsCoordinator', () => {
 
     it('trims query before searching', async () => {
       const listStore = usePostsListStore()
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [], total: 0 })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('  spaces  ', 'body')
@@ -240,7 +236,7 @@ describe('usePostsCoordinator', () => {
 
     it('uses default field "title" when field is not provided', async () => {
       const listStore = usePostsListStore()
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [], total: 0 })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('vue')
@@ -254,7 +250,7 @@ describe('usePostsCoordinator', () => {
     it('keeps previous searchField when field is omitted', async () => {
       const listStore = usePostsListStore()
       listStore.searchField = 'userId'
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [], total: 0 })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('next')
@@ -276,22 +272,22 @@ describe('usePostsCoordinator', () => {
     it('resets page to 1 on new search', async () => {
       const listStore = usePostsListStore()
       listStore.page = 3
-      listStore.skip = 18
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [] })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('new', 'title')
 
       expect(listStore.page).toBe(1)
       expect(listStore.skip).toBe(0)
+      // getPosts is called with current page (3) before response; after response we set page to 1
       const callArg = mockedGetPosts.mock.calls[0]![0]
-      expect(callArg.skip).toBe(0)
+      expect(callArg._page).toBe(3)
     })
 
     it('updates list state from search result', async () => {
       const listStore = usePostsListStore()
       const posts = [makePost(1, 'A'), makePost(2, 'B')]
-      mockedGetPosts.mockResolvedValue({ posts, total: 2, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts, total: 2 })
 
       const { searchPosts } = usePostsCoordinator()
       await searchPosts('test', 'body')
@@ -308,8 +304,6 @@ describe('usePostsCoordinator', () => {
       mockedGetPosts.mockResolvedValue({
         posts: filteredPosts,
         total: 1,
-        skip: 0,
-        limit: 9,
       })
 
       const { searchPosts } = usePostsCoordinator()
@@ -325,16 +319,15 @@ describe('usePostsCoordinator', () => {
   })
 
   describe('refreshPosts', () => {
-    it('invalidates local cache, clears details cache and refreshes', async () => {
+    it('clears details cache and refreshes list', async () => {
       const detailsStore = usePostDetailsStore()
       detailsStore.postDetailsCache = [{ post: makePost(1), user: null, comments: [] }]
 
-      mockedGetPosts.mockResolvedValue({ posts: [], total: 0, skip: 0, limit: 9 })
+      mockedGetPosts.mockResolvedValue({ posts: [] })
       const { refreshPosts } = usePostsCoordinator()
 
       await refreshPosts()
 
-      expect(mockedInvalidateCache).toHaveBeenCalledTimes(1)
       expect(detailsStore.postDetailsCache).toEqual([])
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
     })
@@ -369,6 +362,7 @@ describe('usePostsCoordinator', () => {
     })
 
     it('rethrows when detailsStore.saveChanges throws', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const detailsStore = usePostDetailsStore()
       const post = makePost(1)
       detailsStore.postDetailsCache = [{ post, user: null, comments: [] }]
@@ -378,13 +372,14 @@ describe('usePostsCoordinator', () => {
       const { saveAndSync } = usePostsCoordinator()
 
       await expect(saveAndSync(1)).rejects.toThrow('Patch failed')
+      consoleSpy.mockRestore()
     })
   })
 
   describe('goToPrevPost', () => {
-    it('loads previous post by decrementing skip', async () => {
+    it('loads previous post by decrementing position', async () => {
       const detailsStore = usePostDetailsStore()
-      detailsStore.modalSkip = 5
+      detailsStore.modalPostPosition = 5
 
       const loadSpy = vi.spyOn(detailsStore, 'loadPostForModal').mockResolvedValue()
       const { goToPrevPost } = usePostsCoordinator()
@@ -400,7 +395,7 @@ describe('usePostsCoordinator', () => {
 
     it('does nothing when already at first post', async () => {
       const detailsStore = usePostDetailsStore()
-      detailsStore.modalSkip = 0
+      detailsStore.modalPostPosition = 1
 
       const loadSpy = vi.spyOn(detailsStore, 'loadPostForModal').mockResolvedValue()
       const { goToPrevPost } = usePostsCoordinator()
@@ -412,11 +407,11 @@ describe('usePostsCoordinator', () => {
   })
 
   describe('goToNextPost', () => {
-    it('loads next post by incrementing skip', async () => {
+    it('loads next post by incrementing position', async () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
       listStore.total = 10
-      detailsStore.modalSkip = 5
+      detailsStore.modalPostPosition = 5
 
       const loadSpy = vi.spyOn(detailsStore, 'loadPostForModal').mockResolvedValue()
       const { goToNextPost } = usePostsCoordinator()
@@ -434,7 +429,7 @@ describe('usePostsCoordinator', () => {
       const listStore = usePostsListStore()
       const detailsStore = usePostDetailsStore()
       listStore.total = 10
-      detailsStore.modalSkip = 9
+      detailsStore.modalPostPosition = 10
 
       const loadSpy = vi.spyOn(detailsStore, 'loadPostForModal').mockResolvedValue()
       const { goToNextPost } = usePostsCoordinator()

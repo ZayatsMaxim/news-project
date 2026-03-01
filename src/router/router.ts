@@ -2,7 +2,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { useLoginUserStore } from '@/stores/loginUserStore'
 import { isJwtExpired } from '@/utils/jwt'
 import HomeView from '@/views/HomeView.vue'
-import LoginView from '@/views/login/LoginView.vue'
+import LoginView from '@/views/LoginView.vue'
 import PostsTableView from '@/views/postsTable/PostsTableView.vue'
 
 declare module 'vue-router' {
