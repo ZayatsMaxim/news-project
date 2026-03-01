@@ -129,6 +129,7 @@ export async function getPostById(postId: number, signal?: AbortSignal): Promise
 export interface PatchPostBody {
   title?: string
   body?: string
+  tags?: string[]
 }
 
 /** Обновить пост (PATCH /posts/:postId). Возвращает обновлённый пост с сервера. */
@@ -166,4 +167,24 @@ export async function getPostComments(
 
 export async function deletePost(postId: number, signal?: AbortSignal): Promise<void> {
   await apiClient.delete(`${POSTS_BASE_URL}/${postId}`, { signal })
+}
+
+export async function createPost(post: PostDto, signal?: AbortSignal): Promise<PostDto> {
+  const response = await apiClient.post<RawPostDto>(POSTS_BASE_URL, post, { signal })
+  return mapPostToDto(response.data)
+}
+
+export async function patchPostViews(postId: number, views: number): Promise<void> {
+  await apiClient.patch(`${POSTS_BASE_URL}/${postId}`, { views })
+}
+
+export async function patchPostReactions(
+  postId: number,
+  reactions: { likes: number; dislikes: number },
+): Promise<void> {
+  await apiClient.patch(`${POSTS_BASE_URL}/${postId}`, { reactions })
+}
+
+export async function patchCommentLikes(commentId: number, likes: number): Promise<void> {
+  await apiClient.patch(`${COMMENTS_BASE_URL}/${commentId}`, { likes })
 }

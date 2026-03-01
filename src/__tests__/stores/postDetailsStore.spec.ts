@@ -8,19 +8,34 @@ vi.mock('@/api/postApi', () => ({
   getPosts: vi.fn(),
   getPostComments: vi.fn(),
   patchPost: vi.fn(),
+  patchPostViews: vi.fn(),
+  patchPostReactions: vi.fn(),
+  patchCommentLikes: vi.fn(),
+  createPost: vi.fn(),
 }))
 
 vi.mock('@/api/userApi', () => ({
   getUser: vi.fn(),
 }))
 
-import { getPostById, getPosts, getPostComments, patchPost } from '@/api/postApi'
+vi.mock('@/stores/loginUserStore', () => ({
+  useLoginUserStore: vi.fn(),
+}))
+
+import { getPostById, getPosts, getPostComments, patchPost, patchPostViews, patchPostReactions, patchCommentLikes, createPost } from '@/api/postApi'
 import { getUser } from '@/api/userApi'
+import { useLoginUserStore } from '@/stores/loginUserStore'
+
+const mockedUseLoginUserStore = vi.mocked(useLoginUserStore)
 
 const mockedGetPostById = vi.mocked(getPostById)
 const mockedGetPosts = vi.mocked(getPosts)
 const mockedGetPostComments = vi.mocked(getPostComments)
 const mockedPatchPost = vi.mocked(patchPost)
+const mockedPatchPostViews = vi.mocked(patchPostViews)
+const mockedPatchPostReactions = vi.mocked(patchPostReactions)
+const mockedPatchCommentLikes = vi.mocked(patchCommentLikes)
+const mockedCreatePost = vi.mocked(createPost)
 const mockedGetUser = vi.mocked(getUser)
 
 const mockSessionStorage: Record<string, string> = {}
@@ -53,6 +68,7 @@ const EDITED_POST_IDS_KEY = 'post_details_edited_ids'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockedUseLoginUserStore.mockReturnValue({ user: { id: 1 } } as unknown as ReturnType<typeof useLoginUserStore>)
   for (const k of Object.keys(mockSessionStorage)) delete mockSessionStorage[k]
   Object.defineProperty(globalThis, 'sessionStorage', { value: sessionStorageMock, writable: true })
   setActivePinia(createPinia())
@@ -68,8 +84,13 @@ describe('postDetailsStore', () => {
       expect(store.postDetailsCache).toEqual([])
       expect(store.originalTitle).toBe('')
       expect(store.originalBody).toBe('')
+      expect(store.originalTags).toEqual([])
       expect(store.modalPostPosition).toBe(0)
       expect(store.editedPostIds).toEqual([])
+      expect(store.viewedPostIds).toEqual([])
+      expect(store.userReactions).toEqual({})
+      expect(store.likedCommentIds).toEqual([])
+      expect(store.modalNewPostDraft).toBeNull()
     })
   })
 
@@ -582,6 +603,7 @@ describe('postDetailsStore', () => {
 
     it('adds postId to editedPostIds and saves to sessionStorage on success', async () => {
       const store = usePostDetailsStore()
+      store.editedPostIds = []
       store.postDetailsCache = [{ post: makePost(7), user: null, comments: [] }]
       const updated = makePost(7, 'Edited')
       mockedPatchPost.mockResolvedValue(updated)
@@ -632,6 +654,340 @@ describe('postDetailsStore', () => {
       expect(result).toEqual(updated)
       expect(store.postDetailsCache).toHaveLength(1)
       expect(store.postDetailsCache[0]!.post.id).toBe(1)
+    })
+  })
+
+  describe('isModalNewPost getter', () => {
+    it('returns false by default', () => {
+      const store = usePostDetailsStore()
+      expect(store.isModalNewPost).toBe(false)
+    })
+
+    it('returns true when modalNewPostDraft is set', () => {
+      const store = usePostDetailsStore()
+      store.modalNewPostDraft = makePost(0, '', '')
+      expect(store.isModalNewPost).toBe(true)
+    })
+  })
+
+  describe('modalPostUserReaction getter', () => {
+    it('returns null when no post requested', () => {
+      const store = usePostDetailsStore()
+      expect(store.modalPostUserReaction).toBeNull()
+    })
+
+    it('returns null when no reaction for post', () => {
+      const store = usePostDetailsStore()
+      store.modalRequestedPostId = 5
+      expect(store.modalPostUserReaction).toBeNull()
+    })
+
+    it('returns reaction when set', () => {
+      const store = usePostDetailsStore()
+      store.modalRequestedPostId = 5
+      store.userReactions = { '5': 'like' }
+      expect(store.modalPostUserReaction).toBe('like')
+    })
+  })
+
+  describe('isCommentLiked getter', () => {
+    it('returns false for unknown comment', () => {
+      const store = usePostDetailsStore()
+      expect(store.isCommentLiked(99)).toBe(false)
+    })
+
+    it('returns true for liked comment', () => {
+      const store = usePostDetailsStore()
+      store.likedCommentIds = [1, 5, 10]
+      expect(store.isCommentLiked(5)).toBe(true)
+    })
+  })
+
+  describe('openModalForNewPost', () => {
+    it('sets draft and resets modal state', () => {
+      const store = usePostDetailsStore()
+      store.modalRequestedPostId = 5
+      store.modalPostPosition = 3
+
+      store.openModalForNewPost()
+
+      expect(store.modalNewPostDraft).not.toBeNull()
+      expect(store.modalNewPostDraft!.id).toBe(0)
+      expect(store.modalNewPostDraft!.title).toBe('')
+      expect(store.modalNewPostDraft!.body).toBe('')
+      expect(store.modalRequestedPostId).toBeNull()
+      expect(store.modalPostPosition).toBe(0)
+      expect(store.modalPostLoading).toBe(false)
+    })
+  })
+
+  describe('createModalPost', () => {
+    it('returns null when no draft', async () => {
+      const store = usePostDetailsStore()
+      const result = await store.createModalPost(1)
+      expect(result).toBeNull()
+    })
+
+    it('creates post, clears draft, caches result', async () => {
+      const store = usePostDetailsStore()
+      store.modalNewPostDraft = makePost(0, 'Title', 'Body')
+      const created = makePost(100, 'Title', 'Body')
+      mockedCreatePost.mockResolvedValue(created)
+      mockedGetUser.mockResolvedValue(makeUser(10))
+
+      const result = await store.createModalPost(42)
+
+      expect(result).toEqual(created)
+      expect(store.modalNewPostDraft).toBeNull()
+      expect(store.modalRequestedPostId).toBe(100)
+      expect(store.postDetailsCache).toHaveLength(1)
+      expect(store.postDetailsCache[0]!.post.id).toBe(100)
+      expect(mockedCreatePost).toHaveBeenCalledWith(expect.objectContaining({ userId: 42 }))
+    })
+  })
+
+  describe('removePostFromCache', () => {
+    it('removes post from cache', () => {
+      const store = usePostDetailsStore()
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [] }]
+
+      store.removePostFromCache(5)
+
+      expect(store.postDetailsCache).toHaveLength(0)
+    })
+
+    it('removes postId from editedPostIds', () => {
+      const store = usePostDetailsStore()
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [] }]
+      store.editedPostIds = [5, 10]
+
+      store.removePostFromCache(5)
+
+      expect(store.editedPostIds).toEqual([10])
+    })
+
+    it('does nothing when post not in cache', () => {
+      const store = usePostDetailsStore()
+      store.postDetailsCache = [{ post: makePost(1), user: null, comments: [] }]
+
+      store.removePostFromCache(99)
+
+      expect(store.postDetailsCache).toHaveLength(1)
+    })
+  })
+
+  describe('loadReactionsForUser', () => {
+    const REACTIONS_KEY = 'post_user_reactions'
+    const LIKED_KEY = 'post_liked_comments'
+
+    it('loads reactions and liked comments for user from storage', () => {
+      mockSessionStorage[REACTIONS_KEY] = JSON.stringify({ '1': { '5': 'like', '10': 'dislike' } })
+      mockSessionStorage[LIKED_KEY] = JSON.stringify({ '1': [1, 2, 3] })
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+
+      store.loadReactionsForUser(1)
+
+      expect(store.userReactions).toEqual({ '5': 'like', '10': 'dislike' })
+      expect(store.likedCommentIds).toEqual([1, 2, 3])
+    })
+
+    it('loads empty state when userId is null', () => {
+      const store = usePostDetailsStore()
+      store.userReactions = { '1': 'like' }
+      store.likedCommentIds = [1, 2]
+
+      store.loadReactionsForUser(null)
+
+      expect(store.userReactions).toEqual({})
+      expect(store.likedCommentIds).toEqual([])
+    })
+
+    it('loads only the given user slice when storage has multiple users', () => {
+      mockSessionStorage[REACTIONS_KEY] = JSON.stringify({
+        '1': { '5': 'like' },
+        '2': { '10': 'dislike' },
+      })
+      mockSessionStorage[LIKED_KEY] = JSON.stringify({ '1': [1, 2], '2': [3, 4] })
+      setActivePinia(createPinia())
+      const store = usePostDetailsStore()
+
+      store.loadReactionsForUser(2)
+
+      expect(store.userReactions).toEqual({ '10': 'dislike' })
+      expect(store.likedCommentIds).toEqual([3, 4])
+    })
+  })
+
+  describe('incrementViews', () => {
+    it('calls patchPostViews and updates cache', async () => {
+      const store = usePostDetailsStore()
+      store.viewedPostIds = []
+      const post = makePost(5)
+      post.views = 10
+      store.postDetailsCache = [{ post, user: null, comments: [] }]
+      mockedPatchPostViews.mockResolvedValue(undefined)
+
+      await store.incrementViews(5)
+
+      expect(mockedPatchPostViews).toHaveBeenCalledWith(5, 11)
+      expect(store.postDetailsCache[0]!.post.views).toBe(11)
+      expect(store.viewedPostIds).toContain(5)
+    })
+
+    it('skips if already viewed', async () => {
+      const store = usePostDetailsStore()
+      store.viewedPostIds = [5]
+
+      await store.incrementViews(5)
+
+      expect(mockedPatchPostViews).not.toHaveBeenCalled()
+    })
+
+    it('does not throw on API error', async () => {
+      const store = usePostDetailsStore()
+      store.viewedPostIds = []
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [] }]
+      mockedPatchPostViews.mockRejectedValue(new Error('fail'))
+
+      await store.incrementViews(5)
+
+      expect(store.viewedPostIds).not.toContain(5)
+      consoleSpy.mockRestore()
+    })
+  })
+
+  describe('toggleReaction', () => {
+    it('adds like when no current reaction', async () => {
+      const store = usePostDetailsStore()
+      const post = makePost(5)
+      post.reactions = { likes: 10, dislikes: 2 }
+      store.postDetailsCache = [{ post, user: null, comments: [] }]
+      mockedPatchPostReactions.mockResolvedValue(undefined)
+
+      await store.toggleReaction(5, 'like')
+
+      expect(post.reactions.likes).toBe(11)
+      expect(post.reactions.dislikes).toBe(2)
+      expect(store.userReactions['5']).toBe('like')
+    })
+
+    it('removes like when already liked', async () => {
+      const store = usePostDetailsStore()
+      const post = makePost(5)
+      post.reactions = { likes: 10, dislikes: 2 }
+      store.postDetailsCache = [{ post, user: null, comments: [] }]
+      store.userReactions = { '5': 'like' }
+      mockedPatchPostReactions.mockResolvedValue(undefined)
+
+      await store.toggleReaction(5, 'like')
+
+      expect(post.reactions.likes).toBe(9)
+      expect(store.userReactions['5']).toBeUndefined()
+    })
+
+    it('switches from like to dislike', async () => {
+      const store = usePostDetailsStore()
+      const post = makePost(5)
+      post.reactions = { likes: 10, dislikes: 2 }
+      store.postDetailsCache = [{ post, user: null, comments: [] }]
+      store.userReactions = { '5': 'like' }
+      mockedPatchPostReactions.mockResolvedValue(undefined)
+
+      await store.toggleReaction(5, 'dislike')
+
+      expect(post.reactions.likes).toBe(9)
+      expect(post.reactions.dislikes).toBe(3)
+      expect(store.userReactions['5']).toBe('dislike')
+    })
+
+    it('rolls back on API error', async () => {
+      const store = usePostDetailsStore()
+      store.userReactions = {}
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const post = makePost(5)
+      post.reactions = { likes: 10, dislikes: 2 }
+      store.postDetailsCache = [{ post, user: null, comments: [] }]
+      mockedPatchPostReactions.mockRejectedValue(new Error('fail'))
+
+      await store.toggleReaction(5, 'like')
+
+      expect(post.reactions.likes).toBe(10)
+      expect(post.reactions.dislikes).toBe(2)
+      expect(store.userReactions['5']).toBeUndefined()
+      consoleSpy.mockRestore()
+    })
+
+    it('does nothing when post not in cache', async () => {
+      const store = usePostDetailsStore()
+
+      await store.toggleReaction(99, 'like')
+
+      expect(mockedPatchPostReactions).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('toggleCommentLike', () => {
+    it('adds like to comment', async () => {
+      const store = usePostDetailsStore()
+      const comment = { id: 1, body: 'Test', postId: 5, likes: 3, user: { id: 1, username: 'u', fullName: 'U' } }
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [comment] }]
+      store.modalRequestedPostId = 5
+      mockedPatchCommentLikes.mockResolvedValue(undefined)
+
+      await store.toggleCommentLike(1)
+
+      expect(comment.likes).toBe(4)
+      expect(store.likedCommentIds).toContain(1)
+    })
+
+    it('removes like from comment', async () => {
+      const store = usePostDetailsStore()
+      const comment = { id: 1, body: 'Test', postId: 5, likes: 3, user: { id: 1, username: 'u', fullName: 'U' } }
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [comment] }]
+      store.modalRequestedPostId = 5
+      store.likedCommentIds = [1]
+      mockedPatchCommentLikes.mockResolvedValue(undefined)
+
+      await store.toggleCommentLike(1)
+
+      expect(comment.likes).toBe(2)
+      expect(store.likedCommentIds).not.toContain(1)
+    })
+
+    it('rolls back on API error', async () => {
+      const store = usePostDetailsStore()
+      store.likedCommentIds = []
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const comment = { id: 1, body: 'Test', postId: 5, likes: 3, user: { id: 1, username: 'u', fullName: 'U' } }
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [comment] }]
+      store.modalRequestedPostId = 5
+      mockedPatchCommentLikes.mockRejectedValue(new Error('fail'))
+
+      await store.toggleCommentLike(1)
+
+      expect(comment.likes).toBe(3)
+      expect(store.likedCommentIds).not.toContain(1)
+      consoleSpy.mockRestore()
+    })
+
+    it('does nothing when no cached entry', async () => {
+      const store = usePostDetailsStore()
+
+      await store.toggleCommentLike(1)
+
+      expect(mockedPatchCommentLikes).not.toHaveBeenCalled()
+    })
+
+    it('does nothing when comment not found', async () => {
+      const store = usePostDetailsStore()
+      store.postDetailsCache = [{ post: makePost(5), user: null, comments: [] }]
+      store.modalRequestedPostId = 5
+
+      await store.toggleCommentLike(99)
+
+      expect(mockedPatchCommentLikes).not.toHaveBeenCalled()
     })
   })
 })

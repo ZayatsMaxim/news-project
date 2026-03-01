@@ -41,16 +41,14 @@ export const usePostsListStore = defineStore('postsList', {
     pagesAmount(): number {
       return Math.max(1, this.totalPages)
     },
-    /** Смещение начала текущей страницы: (page - 1) * limit */
-    requiredSkipAmount(): number {
-      return (this.page - 1) * this.limit
-    },
-    skip(): number {
-      return this.requiredSkipAmount
-    },
   },
 
   actions: {
+    /** Пересчитывает totalPages по total и limit. */
+    recalculateTotalPages() {
+      this.totalPages = Math.max(1, Math.ceil(this.total / this.limit))
+    },
+
     saveToStorage() {
       try {
         const stateToSave: StoredPostsState = {
@@ -100,6 +98,10 @@ export const usePostsListStore = defineStore('postsList', {
       }
       requestControllerRef.current = new AbortController()
 
+      if (resetPage) {
+        this.page = 1
+      }
+
       this.isLoading = true
       const signal = requestControllerRef.current.signal
       try {
@@ -116,10 +118,10 @@ export const usePostsListStore = defineStore('postsList', {
 
         this.posts = data.posts
         this.total = data.total ?? data.posts.length
-        this.totalPages = data.totalPages ?? Math.max(1, Math.ceil(this.total / this.limit))
-
-        if (resetPage) {
-          this.page = 1
+        if (data.totalPages !== undefined && data.totalPages !== null) {
+          this.totalPages = data.totalPages
+        } else {
+          this.recalculateTotalPages()
         }
 
         this.saveToStorage()
@@ -128,7 +130,7 @@ export const usePostsListStore = defineStore('postsList', {
           this.posts = []
           this.page = 1
           this.total = 0
-          this.totalPages = 1
+          this.recalculateTotalPages()
           this.saveToStorage()
         } else {
           throw error
@@ -155,11 +157,24 @@ export const usePostsListStore = defineStore('postsList', {
       await this.fetchPosts()
     },
 
-    updatePostInList(postId: number, fields: { title?: string; body?: string }) {
+    updatePostInList(postId: number, fields: { title?: string; body?: string; views?: number }) {
       const post = this.posts.find((p) => p.id === postId)
       if (!post) return
       if (fields.title !== undefined) post.title = fields.title
       if (fields.body !== undefined) post.body = fields.body
+      if (fields.views !== undefined) post.views = fields.views
+      this.saveToStorage()
+    },
+
+    /** Удаляет пост из списка после удаления на сервере. Уменьшает total и пересчитывает totalPages. */
+    removePostFromList(postId: number) {
+      const index = this.posts.findIndex((p) => p.id === postId)
+      if (index === -1) return
+      this.posts.splice(index, 1)
+      if (this.total > 0) {
+        this.total -= 1
+        this.recalculateTotalPages()
+      }
       this.saveToStorage()
     },
 

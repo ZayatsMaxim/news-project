@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 import { usePostsListStore } from '@/stores/postsListStore'
 import { usePostsCoordinator } from '@/composables/usePostsCoordinator'
-import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { useSnackbar } from '@/composables/useSnackbar'
 import { isAbortError } from '@/utils/error'
 import {
   SNACKBAR_ERROR_POST_LOAD_FAILED,
@@ -15,7 +15,7 @@ import PostDetailsModal from '@/components/posts/postDetailsModal.vue'
 
 const postsListStore = usePostsListStore()
 const coordinator = usePostsCoordinator()
-const { showSnackbar } = useErrorSnackbar()
+const { showSnackbar } = useSnackbar()
 
 const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const isHydrating = ref(true)
@@ -108,6 +108,11 @@ async function onRefresh() {
     if (!isAbortError(e)) showSnackbar(SNACKBAR_ERROR_POSTS_LIST_LOAD_FAILED)
   }
 }
+
+function onAddPost() {
+  isPostModalOpen.value = true
+  coordinator.openModalForNewPost()
+}
 </script>
 
 <template>
@@ -147,6 +152,13 @@ async function onRefresh() {
             :disabled="postsListStore.isLoading"
             aria-label="Обновить"
             @click="onRefresh"
+          />
+          <v-btn
+            icon="mdi-note-plus-outline"
+            color="secondary"
+            variant="plain"
+            aria-label="Добавить"
+            @click="onAddPost"
           />
         </v-col>
       </v-row>
@@ -196,17 +208,3 @@ async function onRefresh() {
     </v-container>
   </div>
 </template>
-
-<style scoped>
-.min-height-0 {
-  min-height: 0;
-}
-
-.flex-fill {
-  flex: 1 1 auto;
-}
-
-.flex-shrink-0 {
-  flex-shrink: 0;
-}
-</style>

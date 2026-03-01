@@ -52,14 +52,6 @@ const truncatedPostBody = computed(() => {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
-.min-height-0 {
-  min-height: 0;
-}
-
-.flex-grow-1 {
-  flex-grow: 1;
-}
-
 .post-card:hover {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.18);

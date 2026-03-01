@@ -10,10 +10,19 @@ vi.mock('@/api/postApi', () => ({
   getPostById: vi.fn(),
   getPostComments: vi.fn(),
   patchPost: vi.fn(),
+  patchPostViews: vi.fn(),
+  patchPostReactions: vi.fn(),
+  patchCommentLikes: vi.fn(),
+  createPost: vi.fn(),
+  deletePost: vi.fn(),
 }))
 
 vi.mock('@/api/userApi', () => ({
   getUser: vi.fn(),
+}))
+
+vi.mock('@/stores/loginUserStore', () => ({
+  useLoginUserStore: vi.fn(),
 }))
 
 vi.mock('@/api/postLocalTitleSearch', () => ({
@@ -25,14 +34,21 @@ vi.mock('@/api/mappers/postMapper', () => ({
   mapPostsListToDto: vi.fn((raw: unknown[]) => raw as import('@/dto/post/postDto').PostDto[]),
 }))
 
-import { getPosts, getPostById, getPostComments, patchPost } from '@/api/postApi'
+import { getPosts, getPostById, getPostComments, patchPost, patchPostViews, patchPostReactions, patchCommentLikes, createPost, deletePost } from '@/api/postApi'
 import { getUser } from '@/api/userApi'
+import { useLoginUserStore } from '@/stores/loginUserStore'
 
 const mockedGetPosts = vi.mocked(getPosts)
 const mockedGetPostById = vi.mocked(getPostById)
 const mockedGetPostComments = vi.mocked(getPostComments)
 const mockedPatchPost = vi.mocked(patchPost)
+const mockedPatchPostViews = vi.mocked(patchPostViews)
+const mockedPatchPostReactions = vi.mocked(patchPostReactions)
+const mockedPatchCommentLikes = vi.mocked(patchCommentLikes)
+const mockedCreatePost = vi.mocked(createPost)
+const mockedDeletePost = vi.mocked(deletePost)
 const mockedGetUser = vi.mocked(getUser)
+const mockedUseLoginUserStore = vi.mocked(useLoginUserStore)
 
 function makePost(id: number, title = 'Post', body = 'Body'): PostDto {
   return { id, title, body, userId: 10, views: 100, reactions: { likes: 1, dislikes: 0 } }
@@ -61,6 +77,9 @@ beforeEach(() => {
   sessionStorageMock.clear()
   Object.defineProperty(globalThis, 'sessionStorage', { value: sessionStorageMock, writable: true })
   setActivePinia(createPinia())
+  mockedUseLoginUserStore.mockReturnValue({
+    user: { id: 42, username: 'test', firstName: 'Test', lastName: 'User' },
+  } as any)
 })
 
 describe('usePostsCoordinator', () => {
@@ -179,7 +198,6 @@ describe('usePostsCoordinator', () => {
       expect(listStore.query).toBe('vue')
       expect(listStore.searchField).toBe('title')
       expect(listStore.page).toBe(1)
-      expect(listStore.skip).toBe(0)
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
       const callArg = mockedGetPosts.mock.calls[0]![0]
       expect(callArg.query).toBe('vue')
@@ -278,10 +296,8 @@ describe('usePostsCoordinator', () => {
       await searchPosts('new', 'title')
 
       expect(listStore.page).toBe(1)
-      expect(listStore.skip).toBe(0)
-      // getPosts is called with current page (3) before response; after response we set page to 1
       const callArg = mockedGetPosts.mock.calls[0]![0]
-      expect(callArg._page).toBe(3)
+      expect(callArg._page).toBe(1)
     })
 
     it('updates list state from search result', async () => {
@@ -437,6 +453,67 @@ describe('usePostsCoordinator', () => {
       await goToNextPost()
 
       expect(loadSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('deletePost', () => {
+    it('calls deletePostApi, removes from list and cache', async () => {
+      const listStore = usePostsListStore()
+      const detailsStore = usePostDetailsStore()
+      listStore.posts = [makePost(5)]
+      listStore.total = 1
+      listStore.totalPages = 1
+      detailsStore.postDetailsCache = [{ post: makePost(5), user: null, comments: [] }]
+
+      mockedDeletePost.mockResolvedValue(undefined)
+      mockedGetPosts.mockResolvedValue({ posts: [], total: 0 })
+      const { deletePost } = usePostsCoordinator()
+
+      await deletePost(5)
+
+      expect(mockedDeletePost).toHaveBeenCalledWith(5)
+      expect(listStore.posts).toHaveLength(0)
+      expect(detailsStore.postDetailsCache).toHaveLength(0)
+      expect(mockedGetPosts).toHaveBeenCalled()
+    })
+  })
+
+  describe('openModalForNewPost', () => {
+    it('calls detailsStore.openModalForNewPost', () => {
+      const detailsStore = usePostDetailsStore()
+      const spy = vi.spyOn(detailsStore, 'openModalForNewPost')
+      const { openModalForNewPost } = usePostsCoordinator()
+
+      openModalForNewPost()
+
+      expect(spy).toHaveBeenCalled()
+    })
+  })
+
+  describe('createModalPost', () => {
+    it('returns null when no user', async () => {
+      mockedUseLoginUserStore.mockReturnValue({ user: null } as any)
+      setActivePinia(createPinia())
+
+      const { createModalPost } = usePostsCoordinator()
+      const result = await createModalPost()
+
+      expect(result).toBeNull()
+    })
+
+    it('creates post and refreshes list', async () => {
+      const detailsStore = usePostDetailsStore()
+      detailsStore.modalNewPostDraft = makePost(0, 'New', 'Body')
+      const created = makePost(100, 'New', 'Body')
+      mockedCreatePost.mockResolvedValue(created)
+      mockedGetUser.mockResolvedValue({ id: 42, username: 'test', firstName: 'Test', lastName: 'User' })
+      mockedGetPosts.mockResolvedValue({ posts: [created] })
+
+      const { createModalPost } = usePostsCoordinator()
+      const result = await createModalPost()
+
+      expect(result).toEqual(created)
+      expect(mockedGetPosts).toHaveBeenCalled()
     })
   })
 })

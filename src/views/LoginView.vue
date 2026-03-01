@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLoginUserStore } from '@/stores/loginUserStore'
-import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { useSnackbar } from '@/composables/useSnackbar'
 import {
   SNACKBAR_ERROR_LOGIN_FAILED,
   SNACKBAR_ERROR_LOGIN_INVALID_CREDENTIALS,
@@ -15,7 +15,7 @@ const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null
 const loginUserStore = useLoginUserStore()
 const router = useRouter()
 const route = useRoute()
-const { showSnackbar } = useErrorSnackbar()
+const { showSnackbar } = useSnackbar()
 
 function isInvalidCredentialsError(error: unknown): boolean {
   const err = error as { response?: { data?: { message?: string } } }
@@ -39,8 +39,8 @@ const login = async () => {
 </script>
 
 <template>
-  <div class="login-layout">
-    <v-card class="login-card" max-width="400" variant="elevated">
+  <div class="d-flex align-start justify-center pa-4 mt-16 login-page-height">
+    <v-card class="w-100" max-width="400" variant="elevated">
       <v-card-title class="text-h6">Вход</v-card-title>
       <v-card-text>
         <v-form ref="formRef">
@@ -74,16 +74,7 @@ const login = async () => {
 </template>
 
 <style scoped>
-.login-layout {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+.login-page-height {
   min-height: 100%;
-  padding: 1rem;
-  margin-top: 100px;
-}
-
-.login-card {
-  width: 100%;
 }
 </style>

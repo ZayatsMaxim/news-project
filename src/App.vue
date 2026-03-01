@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { useSnackbar } from '@/composables/useSnackbar'
 
-const { snackbarVisible, snackbarMessage, closeSnackbar } = useErrorSnackbar()
+const { snackbarVisible, snackbarMessage, snackbarColor, closeSnackbar } = useSnackbar()
 </script>
 
 <template>
@@ -12,7 +12,7 @@ const { snackbarVisible, snackbarMessage, closeSnackbar } = useErrorSnackbar()
     <v-snackbar
       v-model="snackbarVisible"
       :text="snackbarMessage"
-      color="error"
+      :color="snackbarColor"
       location="bottom"
       @update:model-value="(v: boolean) => !v && closeSnackbar()"
     >
@@ -23,16 +23,13 @@ const { snackbarVisible, snackbarMessage, closeSnackbar } = useErrorSnackbar()
   </v-app>
 </template>
 
-<style scoped>
+<style>
+/* Общие утилиты для flex-верстки (Vuetify не даёт min-height: 0 / min-width: 0). Используются в App, HomeView, PostsTableView, postCard, postDetailsModal. */
 .min-height-0 {
   min-height: 0;
 }
 
-.flex-fill {
-  flex: 1 1 auto;
-}
-
-.flex-shrink-0 {
-  flex-shrink: 0;
+.min-width-0 {
+  min-width: 0;
 }
 </style>

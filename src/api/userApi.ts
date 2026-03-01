@@ -1,4 +1,3 @@
-// import { get, post } from '@/api/axiosHttpClient'
 import { apiClient } from './axiosHttpClient'
 import { apiConfig } from '@/config/api'
 import type { RefreshResponseDto } from '@/dto/auth/refreshResponseDto'

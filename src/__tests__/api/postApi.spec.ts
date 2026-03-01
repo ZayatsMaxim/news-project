@@ -4,6 +4,8 @@ vi.mock('@/api/axiosHttpClient', () => ({
   apiClient: {
     get: vi.fn(),
     patch: vi.fn(),
+    delete: vi.fn(),
+    post: vi.fn(),
   },
 }))
 
@@ -15,11 +17,13 @@ vi.mock('@/config/api', () => ({
   },
 }))
 
-const { getPosts, getPostById, patchPost, getPostComments } = await import('@/api/postApi')
+const { getPosts, getPostById, patchPost, getPostComments, deletePost, createPost, patchPostViews, patchPostReactions, patchCommentLikes } = await import('@/api/postApi')
 const { apiClient } = await import('@/api/axiosHttpClient')
 
 const mockedGet = vi.mocked(apiClient.get)
 const mockedPatch = vi.mocked(apiClient.patch)
+const mockedDelete = vi.mocked(apiClient.delete)
+const mockedPost = vi.mocked(apiClient.post)
 
 function makeRawPost(overrides: Record<string, unknown> = {}) {
   return {
@@ -286,5 +290,68 @@ describe('getPostComments', () => {
     const result = await getPostComments(1)
 
     expect(result.comments).toEqual([])
+  })
+})
+
+describe('deletePost', () => {
+  it('calls DELETE on correct URL', async () => {
+    mockedDelete.mockResolvedValue(axiosResponse({}))
+
+    await deletePost(5)
+
+    expect(mockedDelete).toHaveBeenCalledWith('https://api.test/posts/5', { signal: undefined })
+  })
+
+  it('passes signal', async () => {
+    mockedDelete.mockResolvedValue(axiosResponse({}))
+    const controller = new AbortController()
+
+    await deletePost(1, controller.signal)
+
+    expect(mockedDelete).toHaveBeenCalledWith('https://api.test/posts/1', { signal: controller.signal })
+  })
+})
+
+describe('createPost', () => {
+  it('sends POST and returns mapped post', async () => {
+    const raw = makeRawPost({ id: 99, title: 'New Post' })
+    mockedPost.mockResolvedValue(axiosResponse(raw))
+    const input = { id: 0, title: 'New Post', body: 'Body', userId: 1, views: 0, reactions: { likes: 0, dislikes: 0 }, tags: [] }
+
+    const result = await createPost(input as any)
+
+    expect(mockedPost).toHaveBeenCalledWith('https://api.test/posts', input, { signal: undefined })
+    expect(result.id).toBe(99)
+    expect(result.title).toBe('New Post')
+  })
+})
+
+describe('patchPostViews', () => {
+  it('sends PATCH with views', async () => {
+    mockedPatch.mockResolvedValue(axiosResponse({}))
+
+    await patchPostViews(5, 101)
+
+    expect(mockedPatch).toHaveBeenCalledWith('https://api.test/posts/5', { views: 101 })
+  })
+})
+
+describe('patchPostReactions', () => {
+  it('sends PATCH with reactions', async () => {
+    mockedPatch.mockResolvedValue(axiosResponse({}))
+
+    await patchPostReactions(5, { likes: 10, dislikes: 2 })
+
+    expect(mockedPatch).toHaveBeenCalledWith('https://api.test/posts/5', { reactions: { likes: 10, dislikes: 2 } })
+  })
+})
+
+describe('patchCommentLikes', () => {
+  it('sends PATCH with likes to comments endpoint', async () => {
+    mockedPatch.mockResolvedValue(axiosResponse({}))
+
+    await patchCommentLikes(7, 15)
+
+    expect(mockedPatch).toHaveBeenCalledWith('https://api.test/comments/7', { likes: 15 })
   })
 })

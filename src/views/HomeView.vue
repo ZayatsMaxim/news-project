@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useLoginUserStore } from '@/stores/loginUserStore'
-import { useErrorSnackbar } from '@/composables/useErrorSnackbar'
+import { usePostDetailsStore } from '@/stores/postDetailsStore'
+import { useSnackbar } from '@/composables/useSnackbar'
 import { SNACKBAR_ERROR_PROFILE_LOAD_FAILED } from '@/constants/snackbarErrorMessages'
 
 const loginUserStore = useLoginUserStore()
+const postDetailsStore = usePostDetailsStore()
 const { user, fullName } = storeToRefs(loginUserStore)
 const router = useRouter()
-const { showSnackbar } = useErrorSnackbar()
+const { showSnackbar } = useSnackbar()
+
+watch(
+  () => loginUserStore.user,
+  (u) => {
+    postDetailsStore.loadReactionsForUser(u?.id ?? null)
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   loginUserStore.fetchAuthorizedUser().catch(() => {
@@ -42,13 +52,16 @@ function onLogout() {
             />
           </template>
           <v-card min-width="240" class="pa-3">
-            <div v-if="user" class="d-flex align-center gap-3 mb-3">
-              <v-avatar :image="user.image || undefined" size="48" color="surface-variant">
+            <div v-if="user" class="d-flex align-center ga-4 mb-3">
+              <v-avatar size="48">
+                <v-img :src="user.image || undefined" />
                 <v-icon v-if="!user.image">mdi-account</v-icon>
               </v-avatar>
               <div class="flex-grow-1 min-width-0">
                 <div class="text-subtitle-1 font-medium text-truncate">{{ fullName }}</div>
-                <div class="text-caption text-medium-emphasis text-truncate">@{{ user.username }}</div>
+                <div class="text-caption text-medium-emphasis text-truncate">
+                  @{{ user.username }}
+                </div>
               </div>
             </div>
             <v-divider class="my-2" />
@@ -70,17 +83,3 @@ function onLogout() {
     </main>
   </div>
 </template>
-
-<style scoped>
-.min-height-0 {
-  min-height: 0;
-}
-
-.flex-fill {
-  flex: 1 1 auto;
-}
-
-.flex-shrink-0 {
-  flex-shrink: 0;
-}
-</style>

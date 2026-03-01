@@ -57,7 +57,6 @@ describe('postsListStore', () => {
       expect(store.posts).toEqual([])
       expect(store.total).toBe(0)
       expect(store.totalPages).toBe(1)
-      expect(store.skip).toBe(0)
       expect(store.limit).toBe(POSTS_PAGE_LIMIT)
       expect(store.page).toBe(1)
       expect(store.query).toBe('')
@@ -76,13 +75,6 @@ describe('postsListStore', () => {
       const store = usePostsListStore()
       store.totalPages = 3
       expect(store.pagesAmount).toBe(3)
-    })
-
-    it('requiredSkipAmount calculates from page and limit', () => {
-      const store = usePostsListStore()
-      store.page = 3
-      store.limit = POSTS_PAGE_LIMIT
-      expect(store.requiredSkipAmount).toBe(18)
     })
   })
 
@@ -133,7 +125,6 @@ describe('postsListStore', () => {
       await store.fetchPosts({ resetPage: true })
 
       expect(store.page).toBe(1)
-      expect(store.skip).toBe(0)
     })
 
     it('keeps page when resetPage is false', async () => {
@@ -144,7 +135,6 @@ describe('postsListStore', () => {
       await store.fetchPosts()
 
       expect(store.page).toBe(3)
-      expect(store.skip).toBe(18)
     })
 
     it('aborts previous request when new one is made', async () => {
@@ -240,7 +230,6 @@ describe('postsListStore', () => {
       expect(store.posts).toEqual([])
       expect(store.total).toBe(0)
       expect(store.totalPages).toBe(1)
-      expect(store.skip).toBe(0)
       expect(store.page).toBe(1)
       expect(sessionStorageMock.setItem).toHaveBeenCalled()
     })
@@ -312,7 +301,6 @@ describe('postsListStore', () => {
       await store.loadPage(3)
 
       expect(store.page).toBe(3)
-      expect(store.skip).toBe(18)
       expect(mockedGetPosts).toHaveBeenCalledTimes(1)
       const callParams = mockedGetPosts.mock.calls[0]![0]
       expect(callParams._page).toBe(3)
@@ -325,7 +313,6 @@ describe('postsListStore', () => {
       const saved = {
         posts: [makePost(1)],
         total: 1,
-        skip: 0,
         page: 1,
         query: '',
         searchField: 'title',
