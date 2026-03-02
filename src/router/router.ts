@@ -1,4 +1,4 @@
-import { createWebHistory, createRouter } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { useLoginUserStore } from '@/stores/loginUserStore'
 import { isJwtExpired } from '@/utils/jwt'
 import HomeView from '@/views/HomeView.vue'
@@ -22,7 +22,7 @@ const routes = [
 ]
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes,
 })
 

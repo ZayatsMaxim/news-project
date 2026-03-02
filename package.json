@@ -21,6 +21,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "@netlify/vite-plugin": "^2.10.3",
     "@vueuse/core": "^14.2.1",
     "axios": "^1.13.6",
     "json-server": "^1.0.0-beta.12",
